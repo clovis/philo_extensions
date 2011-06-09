@@ -100,10 +100,16 @@ class Searcher(object):
     
 class Doc_info(object):
     
-    def __init__(self, db, words, path='/var/lib/philologic/databases/'):
+    def __init__(self, db, query=None, path='/var/lib/philologic/databases/'):
         self.db_path = path + db
         self.db = philologic.PhiloDB.PhiloDB(self.db_path,7)
-        self.hitlist = self.db.query(words)
+        self.query = query
+        if query:
+            self.word = 0
+            self.philo_search()
+            
+    def philo_search(self):
+        self.hitlist = self.db.query(self.query.split()[self.word])
         time.sleep(.05)
         self.hitlist.update()
         
@@ -118,15 +124,20 @@ class Doc_info(object):
         
     def get_excerpt(self, doc_id):
         index = self.binary_search(doc_id)
-        offsets = self.hitlist.get_bytes(self.hitlist[index])
-        byte_offset = offsets[0]
-        conc_start = byte_offset - 200
-        if conc_start < 0:
-            conc_start = 0
-        text_path = self.db_path + "/TEXT/" + self.filename(doc_id)
-        text_file = open(text_path)
-        text_file.seek(conc_start)
-        return text_file.read(400)
+        if index:
+            offsets = self.hitlist.get_bytes(self.hitlist[index])
+            byte_offset = offsets[0]
+            conc_start = byte_offset - 200
+            if conc_start < 0:
+                conc_start = 0
+            text_path = self.db_path + "/TEXT/" + self.filename(doc_id)
+            text_file = open(text_path)
+            text_file.seek(conc_start)
+            return text_file.read(400)
+        else:
+            self.word += 1
+            self.philo_search()
+            self.get_excerpt(doc_id)
         
     def binary_search(self, doc_id, lo=0, hi=None):
         if hi is None:
@@ -140,4 +151,4 @@ class Doc_info(object):
                 hi = mid
             else:
                 return mid
-        return -1
+        return None
