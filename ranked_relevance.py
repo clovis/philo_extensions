@@ -3,6 +3,7 @@
 import json
 import philologic.PhiloDB
 import time
+import re
 from math import log, floor
 from operator import itemgetter
 from word_mapper import mapper
@@ -14,8 +15,7 @@ class Searcher(object):
     def __init__(self, query, db, path='/var/lib/philologic/databases/'):
         self.path = path + db + '/'
         self.words = self.word_to_id(query)
-        self.results = {}
-        
+        self.results = {}        
         
     def get_hits(self, word):
         cursor = sqlite_conn(self.path)
@@ -103,13 +103,14 @@ class Doc_info(object):
     def __init__(self, db, query=None, path='/var/lib/philologic/databases/'):
         self.db_path = path + db
         self.db = philologic.PhiloDB.PhiloDB(self.db_path,7)
-        self.query = query
+        self.query = query.split()
+        self.patterns = [re.compile('(?iu)(\A|\W)(%s)(\W)' % word) for word in self.query]
         if query:
             self.word = 0
             self.philo_search()
             
     def philo_search(self):
-        self.hitlist = self.db.query(self.query.split()[self.word])
+        self.hitlist = self.db.query(self.query[self.word])
         time.sleep(.05)
         self.hitlist.update()
         
@@ -122,7 +123,7 @@ class Doc_info(object):
     def author(self, doc_id):    
         return self.db.toms[doc_id]["author"]
         
-    def get_excerpt(self, doc_id):
+    def get_excerpt(self, doc_id, highlight=False):
         index = self.binary_search(doc_id)
         if index:
             offsets = self.hitlist.get_bytes(self.hitlist[index])
@@ -133,7 +134,14 @@ class Doc_info(object):
             text_path = self.db_path + "/TEXT/" + self.filename(doc_id)
             text_file = open(text_path)
             text_file.seek(conc_start)
-            return text_file.read(400)
+            if highlight:
+                text = text_file.read(400)
+                for word in self.patterns:
+                    #text = text.replace('%s' % word, '<span style="color: red>%s</span>' % word)
+                    text = word.sub('\\1<span style="color: red">\\2</span>\\3', text)
+                return text
+            else:
+                return text_file.read(400)
         else:
             self.word += 1
             self.philo_search()
@@ -143,7 +151,7 @@ class Doc_info(object):
         if hi is None:
             hi = len(self.hitlist)
         while lo < hi:
-            mid = (lo+hi)//2
+            mid = (lo + hi) // 2
             midval = self.hitlist[mid][0]
             if midval < doc_id:
                 lo = mid + 1
