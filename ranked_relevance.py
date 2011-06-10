@@ -137,13 +137,15 @@ class Doc_info(object):
             if highlight:
                 text = text_file.read(400)
                 for word in self.patterns:
-                    #text = text.replace('%s' % word, '<span style="color: red>%s</span>' % word)
                     text = word.sub('\\1<span style="color: red">\\2</span>\\3', text)
                 return text
             else:
                 return text_file.read(400)
         else:
-            self.word += 1
+            if self.query[self.word] == self.query[-1]:
+                self.word = 0
+            else:
+                self.word += 1
             self.philo_search()
             self.get_excerpt(doc_id)
         
