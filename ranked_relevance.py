@@ -38,12 +38,23 @@ class Searcher(object):
         total_docs = doc_counter(self.path)
         return log(float(total_docs) / float(len(hits))) + 1
                
-    def search(self, measure='tf_idf', scoring='simple_scoring', display=10):
+    def search(self, measure='tf_idf', scoring='simple_scoring', intersect=False, display=10):
+        self.intersect = False
         if self.words != []:
             for word in self.words:
                 term, term_freq = word
                 hits = self.get_hits(term)
                 getattr(self, measure)(term_freq, hits, scoring)
+                if intersect:
+                    if self.intersect:
+                        self.docs = self.docs.intersection(self.new_docs)
+                        self.new_docs = set([])
+                    else:
+                        self.intersect = True
+                        self.docs = set([doc_id for doc_id in self.results])
+                        self.new_docs = set([])
+            if intersect:
+                self.results = dict([(doc_id, self.results[doc_id]) for doc_id in self.results if doc_id in self.docs])
             return sorted(self.results.iteritems(), key=itemgetter(1), reverse=True)[:display]
         else:
             return []
@@ -75,17 +86,24 @@ class Searcher(object):
             getattr(self, scoring)(int(doc), score)
                     
     def simple_scoring(self, doc_id, score):
+        if self.intersect:
+            self.new_docs.add(doc_id)
         if doc_id not in self.results:
             self.results[doc_id] = score
         else:
             self.results[doc_id] += score
     
     def dismax_scoring(self, doc_id, score):
+        if self.intersect:
+            self.new_docs.add(doc_id)
         if doc_id not in self.results:
             self.results[doc_id] = score
         else:
             if score > self.results[doc_id]:
                 self.results[doc_id] = score
+                
+    def filtered_scoring(self, doc_id, score):
+        pass
                 
     
 class Doc_info(object):
