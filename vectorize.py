@@ -30,10 +30,10 @@ class Indexer(object):
             
         if ranked_relevance:
             self.r_r = ranked_relevance
+            self.__init__sqlite()
             self.hits_per_word = {}
         
         makedirs(self.arrays_path, 0755)
-
 
     def word_ids(self):
         self.id_to_word = {}
@@ -44,39 +44,34 @@ class Indexer(object):
             self.word_to_id[fields[1]] = word_id
             self.id_to_word[word_id] = fields[1]
             word_id += 1
-            
 
     def __init__array(self, sum_of_words):
         self.doc_array = self.zeros(self.word_num, dtype=self.float32)
         self.doc_array[-1] = sum_of_words
         
-        
     def make_array(self, doc_id):
         array_path = self.arrays_path + doc_id + '.npy'
         self.save(array_path, self.doc_array)
-    
-    
-    def ranked_relevance(self):
-        ## create sqlite table with number of docs with frequencies higher than 0
-        ## for each word
-        conn = sqlite3.connect(self.db_path + 'hits_per_word.sqlite')
-        c = conn.cursor()
-        c.execute('''create table hits (word int, docs blob)''')
-        c.execute('''create index word_index on hits(word)''')
-
-        for word_id in self.hits_per_word:
-            doc_list = json.dumps(self.hits_per_word[word_id])
-            c.execute('insert into hits values (?,?)', (word_id, doc_list))
-            
-        num = len(self.docs)
-        c.execute('insert into hits values (?,?)', (None, num))
-
-        conn.commit()
-        c.close()
         
+    def __init__sqlite(self):
+        self.conn = sqlite3.connect(self.db_path + 'hits_per_word.sqlite')
+        self.c = self.conn.cursor()
+        self.c.execute('''create table hits (word int, docs blob)''')
+        self.c.execute('''create index word_index on hits(word)''')
         
+    def create_row(self, word_id):
+        self.c.execute('insert into hits values (?,?)', (word_id, ''))
+    
+    def store_frequencies(self, word_id, value):
+        self.c.execute('select docs from hits where word=?', (word_id,))
+        old_value = self.c.fetchone()[0]
+        new_value = old_value + '/' + value
+        self.c.execute('update hits set docs=? where word=?', (new_value, word_id))
+               
     def index_docs(self):
+        count = 0
         for doc in self.docs:
+            count += 1
             doc_dict = {}
             doc_id = ''
             for line in open(doc):
@@ -98,13 +93,21 @@ class Indexer(object):
                     self.doc_array[int(word_id)] = doc_dict[word_id]
                 if self.r_r:
                     if word_id not in self.hits_per_word:
-                        self.hits_per_word[word_id] = []
-                    self.hits_per_word[word_id].append(doc_id + ',' + str(doc_dict[word_id]) + ',' + str(sum_of_words))
+                        self.hits_per_word[word_id] = 1
+                        self.create_row(word_id)
+                    value = doc_id + ',' + str(doc_dict[word_id]) + ',' + str(sum_of_words)
+                    self.store_frequencies(word_id, value)
             
             del doc_dict
             
             if self.arrays:
                 self.make_array(doc_id)
+                
+            if self.r_r:
+                if count == 100:
+                    self.conn.commit()
+                    count = 0
         
         if self.r_r:
-            self.ranked_relevance()
+            self.conn.commit()
+            self.c.close()

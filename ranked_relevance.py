@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import json
 import philologic.PhiloDB
 import time
 import re
@@ -20,7 +19,7 @@ class Searcher(object):
     def get_hits(self, word):
         cursor = sqlite_conn(self.path)
         cursor.execute('select docs from hits where word=?', (word,))
-        return json.loads(cursor.fetchone()[0])
+        return [hit.split(',') for hit in cursor.fetchone()[0].split('/')[1:]]
         
     def word_to_id(self, query):
         m = mapper(self.path)
@@ -51,19 +50,13 @@ class Searcher(object):
     
     def tf_idf(self, term_freq, hits, scoring):
         idf = self.get_idf(hits)
-        for hit in hits:
-            doc, word_freq, word_sum = hit.split(',')
-            
-            # Calculate TF-IDF
+        for doc, word_freq, word_sum in hits:
             tf = float(word_freq) / float(word_sum)
             score = tf * idf
             getattr(self, scoring)(int(doc), score)
                     
     def frequency(self, term_freq, hits, scoring):
-        for hit in hits:
-            doc, word_freq, word_sum = hit.split(',')
-            
-            # Calculate word frequency
+        for doc, word_freq, word_sum in hits:
             score = float(word_freq) / float(word_sum)
             getattr(self, scoring)(int(doc), score)
                     
@@ -73,12 +66,9 @@ class Searcher(object):
         ## see http://xapian.org/docs/bm25.html
         idf = self.get_idf(hits)
         avg_dl = avg_doc_length(self.path)
-        for hit in hits:
-            doc, word_freq, doc_length = hit.split(',')
+        for doc, word_freq, doc_length in hits:
             tf = float(word_freq)
             dl = float(doc_length)
-            
-            # Calculate BM25 score
             temp_score = tf * (k1 + 1.0)
             temp_score2 = tf + k1 * ((1.0 - b) + b * floor(dl / avg_dl))
             score = idf * temp_score / temp_score2
@@ -103,9 +93,12 @@ class Doc_info(object):
     def __init__(self, db, query=None, path='/var/lib/philologic/databases/'):
         self.db_path = path + db
         self.db = philologic.PhiloDB.PhiloDB(self.db_path,7)
-        self.query = query.split()
-        self.patterns = [re.compile('(?iu)(\A|\W)(%s)(\W)' % word) for word in self.query]
+        
         if query:
+            self.query = query.split()
+            self.patterns = [re.compile('(?iu)(\A|\W)(%s)(\W)' % word) for word in self.query]
+            self.cut_begin = re.compile('\A[^ ]* ')
+            self.cut_end = re.compile('<*[^ ]* [^ ]*\Z')
             self.word = 0
             self.philo_search()
             
@@ -134,18 +127,19 @@ class Doc_info(object):
             text_path = self.db_path + "/TEXT/" + self.filename(doc_id)
             text_file = open(text_path)
             text_file.seek(conc_start)
+            text = text_file.read(400)
             if highlight:
-                text = text_file.read(400)
                 for word in self.patterns:
                     text = word.sub('\\1<span style="color: red">\\2</span>\\3', text)
-                return text
-            else:
-                return text_file.read(400)
+            text = self.cut_begin.sub('', text)
+            text = self.cut_end.sub('', text)
+            text = text.replace('<s/>', '')
+            return text
         else:
-            if self.query[self.word] == self.query[-1]:
-                self.word = 0
-            else:
+            if self.query[self.word] != self.query[-1]:
                 self.word += 1
+            else:
+                self.word = 0
             self.philo_search()
             self.get_excerpt(doc_id)
         
