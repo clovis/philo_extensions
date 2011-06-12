@@ -4,7 +4,6 @@ from glob import glob
 from os import makedirs
 import sys
 import sqlite3
-import json
 
 
 class Indexer(object):
