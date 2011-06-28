@@ -4,15 +4,17 @@ from glob import glob
 from os import makedirs
 import sys
 import sqlite3
+from data_handler import np_array_loader
 
 
 class Indexer(object):
     
     
-    def __init__(self, db, arrays=True, ranked_relevance=True):
+    def __init__(self, db, arrays=True, ranked_relevance=True, store_results=False):
         self.db_path = '/var/lib/philologic/databases/' + db + '/'
         self.docs = glob(self.db_path + 'WORK/*words.sorted')
         self.arrays_path = self.db_path + 'doc_arrays/'
+        self.store_results = store_results
         self.word_ids()
         
         if arrays:
@@ -110,3 +112,120 @@ class Indexer(object):
         if self.r_r:
             self.conn.commit()
             self.c.close()
+        
+        if self.store_results:
+            storage = VSM_stored(self.db_path, self.arrays_path)
+            storage.store_results()
+            
+            
+class VSM_stored(object):
+    
+    
+    def __init__(self, db_path, arrays_path, high_ram=False):
+        try:
+            from knn_helper import knn
+            self.knn = knn
+        except ImportError:
+            print >> sys.stderr, "scipy is not installed, VSM results will not be stored"
+        
+        import re
+        pattern = re.compile(arrays_path + '(\d+)\.npy')
+        docs = glob(arrays_path + '*')
+        self.docs = [int(pattern.sub('\\1', doc)) for doc in docs]
+        self.db_path = db_path
+        self.arrays_path = arrays_path
+        self.in_mem = high_ram
+        
+    def __init__sqlite(self):
+        self.conn = sqlite3.connect(self.db_path + 'vsm_results.sqlite')
+        self.c = self.conn.cursor()
+        self.c.execute('''drop table if exists results''')
+        self.c.execute('''create table results (doc_id int, neighbor_doc_id int, neighbor_distance real)''')
+        self.c.execute('''create index doc_id_index on results(doc_id)''')
+        self.c.execute('''create index distance_id_index on results(neighbor_distance)''')
+    
+    def store_results(self):
+        self.__init__sqlite()
+        top_words = 100
+        lower_words = -100
+        count = 0
+        if not self.in_mem:
+            for doc in self.docs:
+                k = self.knn(doc, self.db_path, top_words=top_words, lower_words=lower_words)
+                k.search()
+                for new_doc, distance in k.results:
+                    self.c.execute('insert into results values (?,?,?)', (doc, new_doc, distance))
+                count +=1
+                if count == 10:
+                    print '.',
+                    count = 0
+                self.conn.commit()
+        else:
+            from scipy.spatial.distance import cosine
+            array_list = [(doc, np_array_loader(doc, self.db_path, top=top_words, lower=lower_words)) for doc in self.docs[:10]]
+            for doc, array in array_list:
+                for new_doc, new_array in array_list:
+                    if doc != new_doc:
+                        result = 1 - cosine(array, new_array)
+                        self.c.execute('insert into results values (?,?,?)', (doc, new_doc, result))
+                self.conn.commit()
+                count += 1
+                if count == 10:
+                    print '.',
+                    count = 0
+        
+        self.c.close()
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        

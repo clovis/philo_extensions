@@ -28,12 +28,15 @@ class knn(object):
     def __call__(self):
         for doc_id in self.docs:
             doc = np_array_loader(doc_id, self.path, top=self.top, lower=self.lower)
-            self.results.append((doc_id, 1 - self.metric(self.orig, doc)))
+            self.results.append((doc_id, 1 - self.distance(doc)))
+            
+    def distance(self, doc):
+        return 1 - self.metric(self.orig, doc)
         
     def loader(self, doc, path, top_words, lower_words):
         return np_array_loader(doc, path, top=top_words, lower=lower_words)
         
-    def sort_results(self, order=True, display=10):
+    def sort_results(self, order=True, display=-1):
         return sorted(self.results, key=itemgetter(1), reverse=order)[:display]
         
     def word_freq_sort(self, doc, path):
