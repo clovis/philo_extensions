@@ -153,7 +153,7 @@ class VSM_stored(object):
                 self.conn.commit()
         else:
             from scipy.spatial.distance import cosine
-            array_list = [(doc, np_array_loader(doc, self.db_path, top=top_words, lower=lower_words)) for doc in self.docs[:10]]
+            array_list = [(doc, np_array_loader(doc, self.db_path, top=top_words, lower=lower_words)) for doc in self.docs]
             for doc, array in array_list:
                 for new_doc, new_array in array_list:
                     if doc != new_doc:
