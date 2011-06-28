@@ -18,8 +18,8 @@ class Searcher(object):
         
     def get_hits(self, word):
         cursor = sqlite_conn(self.path)
-        cursor.execute('select docs from hits where word=?', (word,))
-        return [hit.split(',') for hit in cursor.fetchone()[0].split('/')[1:]]
+        cursor.execute('select doc_id, word_freq, total_words from hits where word=?', (word,))
+        return cursor.fetchall()
         
     def word_to_id(self, query):
         m = mapper(self.path)
@@ -44,6 +44,7 @@ class Searcher(object):
             for word in self.words:
                 term, term_freq = word
                 hits = self.get_hits(term)
+                #print type(hits)
                 getattr(self, measure)(term_freq, hits, scoring)
                 if intersect:
                     if self.intersect:

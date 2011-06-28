@@ -16,14 +16,14 @@ class Indexer(object):
         self.arrays_path = self.db_path + 'doc_arrays/'
         self.store_results = store_results
         self.word_ids()
+        self.arrays = arrays
         
-        if arrays:
+        if self.arrays:
             try:
                 from numpy import zeros, float32, save
                 self.zeros = zeros
                 self.float32 = float32
                 self.save = save
-                self.arrays = arrays
                 self.word_num = len(self.word_to_id) + 1 # last column for sum of words in doc
             except ImportError:
                 self.arrays = False
@@ -57,17 +57,9 @@ class Indexer(object):
     def __init__sqlite(self):
         self.conn = sqlite3.connect(self.db_path + 'hits_per_word.sqlite')
         self.c = self.conn.cursor()
-        self.c.execute('''create table hits (word int, docs blob)''')
+        self.c.execute('''drop table if exists hits''')
+        self.c.execute('''create table hits (word int, doc_id int, word_freq int, total_words int)''')
         self.c.execute('''create index word_index on hits(word)''')
-        
-    def create_row(self, word_id):
-        self.c.execute('insert into hits values (?,?)', (word_id, ''))
-    
-    def store_frequencies(self, word_id, value):
-        self.c.execute('select docs from hits where word=?', (word_id,))
-        old_value = self.c.fetchone()[0]
-        new_value = old_value + '/' + value
-        self.c.execute('update hits set docs=? where word=?', (new_value, word_id))
                
     def index_docs(self):
         count = 0
@@ -95,9 +87,7 @@ class Indexer(object):
                 if self.r_r:
                     if word_id not in self.hits_per_word:
                         self.hits_per_word[word_id] = 1
-                        self.create_row(word_id)
-                    value = doc_id + ',' + str(doc_dict[word_id]) + ',' + str(sum_of_words)
-                    self.store_frequencies(word_id, value)
+                    self.c.execute('insert into hits values (?,?,?,?)', (word_id, int(doc_id), doc_dict[word_id], sum_of_words))
             
             del doc_dict
             
@@ -107,6 +97,7 @@ class Indexer(object):
             if self.r_r:
                 if count == 100:
                     self.conn.commit()
+                    print '.',
                     count = 0
         
         if self.r_r:
