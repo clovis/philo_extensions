@@ -1,22 +1,26 @@
 #!/usr/bin/env python
 
-from glob import glob
-from os import makedirs
+import re
 import sys
 import sqlite3
 from data_handler import np_array_loader
+from glob import glob
+from os import makedirs
 
+          
 
 class Indexer(object):
     
     
-    def __init__(self, db, arrays=True, ranked_relevance=True, store_results=False):
+    def __init__(self, db, arrays=True, ranked_relevance=True, store_results=False, depth=0):
         self.db_path = '/var/lib/philologic/databases/' + db + '/'
-        self.docs = glob(self.db_path + 'WORK/*words.sorted')
-        self.arrays_path = self.db_path + 'doc_arrays/'
+        self.docs = glob(self.db_path + 'WORK/*tei.words.sorted')
+        self.arrays_path = self.db_path + 'obj_arrays/'
         self.store_results = store_results
         self.word_ids()
         self.arrays = arrays
+        self.r_r = ranked_relevance
+        self.depth = depth
         
         if self.arrays:
             try:
@@ -30,11 +34,13 @@ class Indexer(object):
                 print >> sys.stderr, "numpy is not installed, numpy arrays won't be generated"
             
         if ranked_relevance:
-            self.r_r = ranked_relevance
             self.__init__sqlite()
             self.hits_per_word = {}
         
-        makedirs(self.arrays_path, 0755)
+        try:
+            makedirs(self.arrays_path, 0755)
+        except OSError:
+            pass
 
     def word_ids(self):
         self.id_to_word = {}
@@ -50,55 +56,69 @@ class Indexer(object):
         self.doc_array = self.zeros(self.word_num, dtype=self.float32)
         self.doc_array[-1] = sum_of_words
         
-    def make_array(self, doc_id):
-        array_path = self.arrays_path + doc_id + '.npy'
+    def make_array(self, obj_id):
+        name = '-'.join(obj_id.split())
+        array_path = self.arrays_path + name + '.npy'
         self.save(array_path, self.doc_array)
         
     def __init__sqlite(self):
         self.conn = sqlite3.connect(self.db_path + 'hits_per_word.sqlite')
         self.c = self.conn.cursor()
-        self.c.execute('''drop table if exists hits''')
-        self.c.execute('''create table hits (word int, doc_id int, word_freq int, total_words int)''')
-        self.c.execute('''create index word_index on hits(word)''')
+        ## Should I create a different table when I just want doc hits ?
+        if self.depth:
+            self.c.execute('''create table obj_hits (word int, obj_id text, word_freq int, total_words int)''')
+            self.c.execute('''create index word_obj_index on obj_hits(word)''')
+        else:
+            self.c.execute('''create table doc_hits (word int, doc_id int, word_freq int, total_words int)''')
+            self.c.execute('''create index word_doc_index on doc_hits(word)''')
                
-    def index_docs(self):
-        count = 0
+    def index_docs(self): ## depth level beyond doc id
+        obj_count = 0
+        exclude = re.compile('all.words.sorted')
         for doc in self.docs:
-            count += 1
+            if exclude.search(doc):
+                continue
+            obj_count += 1
             doc_dict = {}
-            doc_id = ''
+            endslice = 3 + self.depth
             for line in open(doc):
                 fields = line.split()
-                word_id = self.word_to_id[fields[1]]
-                doc_id = fields[2]
-                if word_id not in doc_dict:
-                    doc_dict[word_id] = 1
-                else:
-                    doc_dict[word_id] += 1
-            
-            sum_of_words = sum([i for i in doc_dict.values()])
-            
-            if self.arrays:
-                self.__init__array(sum_of_words)
+                word_id = int(self.word_to_id[fields[1]])
+                doc_id = int(fields[2])
                 
-            for word_id in doc_dict:
+                obj_id = ' '.join(fields[2:endslice])
+                
+                if obj_id not in doc_dict:
+                    doc_dict[obj_id] = {}
+                
+                if word_id not in doc_dict[obj_id]:
+                    doc_dict[obj_id][word_id] = 1
+                else:
+                    doc_dict[obj_id][word_id] += 1
+
+            for obj_id in doc_dict:
+                obj_count += 1
+                sum_of_words = sum([i for i in doc_dict[obj_id].values()])
                 if self.arrays:
-                    self.doc_array[int(word_id)] = doc_dict[word_id]
-                if self.r_r:
-                    if word_id not in self.hits_per_word:
-                        self.hits_per_word[word_id] = 1
-                    self.c.execute('insert into hits values (?,?,?,?)', (word_id, int(doc_id), doc_dict[word_id], sum_of_words))
-            
-            del doc_dict
-            
-            if self.arrays:
-                self.make_array(doc_id)
+                    self.__init__array(sum_of_words)
+                
+                for word_id in doc_dict[obj_id]:
+                    if self.arrays:
+                        self.doc_array[word_id] = doc_dict[obj_id][word_id]
+                    if self.r_r:
+                        if not self.depth:
+                            self.c.execute('insert into doc_hits values (?,?,?,?)', (word_id, doc_id, doc_dict[obj_id][word_id], sum_of_words))
+                        else:
+                            self.c.execute('insert into obj_hits values (?,?,?,?)', (word_id, obj_id, doc_dict[obj_id][word_id], sum_of_words))
+                
+                if self.arrays:
+                    self.make_array(obj_id)
                 
             if self.r_r:
-                if count == 100:
+                if obj_count > 100:
                     self.conn.commit()
                     print '.',
-                    count = 0
+                    obj_count = 0
         
         if self.r_r:
             self.conn.commit()
@@ -107,9 +127,9 @@ class Indexer(object):
         if self.store_results:
             storage = VSM_stored(self.db_path, self.arrays_path)
             storage.store_results()
-            
-            
-class VSM_stored(object):
+
+
+class KNN_stored(object):
     
     
     def __init__(self, db_path, arrays_path, high_ram=False):
@@ -117,18 +137,18 @@ class VSM_stored(object):
             from knn_helper import knn
             self.knn = knn
         except ImportError:
-            print >> sys.stderr, "scipy is not installed, VSM results will not be stored"
+            print >> sys.stderr, "scipy is not installed, KNN results will not be stored"
         
-        import re
         pattern = re.compile(arrays_path + '(\d+)\.npy')
+        skip_divs = re.compile('-')
         docs = glob(arrays_path + '*')
-        self.docs = [int(pattern.sub('\\1', doc)) for doc in docs]
+        self.docs = [int(pattern.sub('\\1', doc)) for doc in docs if not skip_divs.search(doc)]
         self.db_path = db_path
         self.arrays_path = arrays_path
         self.in_mem = high_ram
         
     def __init__sqlite(self):
-        self.conn = sqlite3.connect(self.db_path + 'vsm_results.sqlite')
+        self.conn = sqlite3.connect(self.db_path + 'knn_results.sqlite')
         self.c = self.conn.cursor()
         self.c.execute('''drop table if exists results''')
         self.c.execute('''create table results (doc_id int, neighbor_doc_id int, neighbor_distance real)''')

@@ -11,14 +11,18 @@ from data_handler import *
 
 class Searcher(object):
     
-    def __init__(self, query, db, path='/var/lib/philologic/databases/'):
+    def __init__(self, query, db, doc_level_search=True, path='/var/lib/philologic/databases/'):
         self.path = path + db + '/'
         self.words = self.word_to_id(query)
+        self.doc_level_search = doc_level_search
         self.results = {}        
         
-    def get_hits(self, word):
+    def get_hits(self, word, doc=True):
         cursor = sqlite_conn(self.path)
-        cursor.execute('select doc_id, word_freq, total_words from hits where word=?', (word,))
+        if self.doc_level_search:
+            cursor.execute('select doc_id, word_freq, total_words from doc_hits where word=?', (word,))
+        else:
+            cursor.execute('select obj_id, word_freq, total_words from obj_hits where word=?', (word,))
         return cursor.fetchall()
         
     def word_to_id(self, query):
@@ -44,7 +48,6 @@ class Searcher(object):
             for word in self.words:
                 term, term_freq = word
                 hits = self.get_hits(term)
-                #print type(hits)
                 getattr(self, measure)(term_freq, hits, scoring)
                 if intersect:
                     if self.intersect:
@@ -52,25 +55,25 @@ class Searcher(object):
                         self.new_docs = set([])
                     else:
                         self.intersect = True
-                        self.docs = set([doc_id for doc_id in self.results])
+                        self.docs = set([obj_id for obj_id in self.results])
                         self.new_docs = set([])
             if intersect:
-                self.results = dict([(doc_id, self.results[doc_id]) for doc_id in self.results if doc_id in self.docs])
+                self.results = dict([(obj_id, self.results[obj_id]) for obj_id in self.results if obj_id in self.docs])
             return sorted(self.results.iteritems(), key=itemgetter(1), reverse=True)[:display]
         else:
             return []
     
     def tf_idf(self, term_freq, hits, scoring):
         idf = self.get_idf(hits)
-        for doc, word_freq, word_sum in hits:
+        for obj_id, word_freq, word_sum in hits:
             tf = float(word_freq) / float(word_sum)
             score = tf * idf
-            getattr(self, scoring)(int(doc), score)
+            getattr(self, scoring)(obj_id, score)
                     
     def frequency(self, term_freq, hits, scoring):
-        for doc, word_freq, word_sum in hits:
+        for obj_id, word_freq, word_sum in hits:
             score = float(word_freq) / float(word_sum)
-            getattr(self, scoring)(int(doc), score)
+            getattr(self, scoring)(obj_id, score)
                     
     def bm25(self, term_freq, hits, scoring, k1=1.2, b=0.75):
         ## a floor is applied to normalized length of doc
@@ -78,36 +81,35 @@ class Searcher(object):
         ## see http://xapian.org/docs/bm25.html
         idf = self.get_idf(hits)
         avg_dl = avg_doc_length(self.path)
-        for doc, word_freq, doc_length in hits:
+        for obj_id, word_freq, obj_length in hits:
             tf = float(word_freq)
-            dl = float(doc_length)
+            dl = float(obj_length)
             temp_score = tf * (k1 + 1.0)
             temp_score2 = tf + k1 * ((1.0 - b) + b * floor(dl / avg_dl))
             score = idf * temp_score / temp_score2
-            getattr(self, scoring)(int(doc), score)
+            getattr(self, scoring)(obj_id, score)
                     
-    def simple_scoring(self, doc_id, score):
+    def simple_scoring(self, obj_id, score):
         if self.intersect:
-            self.new_docs.add(doc_id)
-        if doc_id not in self.results:
-            self.results[doc_id] = score
+            self.new_docs.add(obj_id)
+        if obj_id not in self.results:
+            self.results[obj_id] = score
         else:
-            self.results[doc_id] += score
+            self.results[obj_id] += score
     
-    def dismax_scoring(self, doc_id, score):
+    def dismax_scoring(self, obj_id, score):
         if self.intersect:
-            self.new_docs.add(doc_id)
-        if doc_id not in self.results:
-            self.results[doc_id] = score
+            self.new_docs.add(obj_id)
+        if obj_id not in self.results:
+            self.results[obj_id] = score
         else:
-            if score > self.results[doc_id]:
-                self.results[doc_id] = score
-                
-    def filtered_scoring(self, doc_id, score):
-        pass
+            if score > self.results[obj_id]:
+                self.results[obj_id] = score
                 
     
 class Doc_info(object):
+    """Helper class meant to provide various information on document.
+    It provides various convenience functions based on the PhiloLogic library"""
     
     def __init__(self, db, query=None, path='/var/lib/philologic/databases/'):
         self.db_path = path + db
@@ -122,20 +124,37 @@ class Doc_info(object):
             self.philo_search()
             
     def philo_search(self):
+        """Query the PhiloLogic database and retrieve a hitlist"""
         self.hitlist = self.db.query(self.query[self.word])
         time.sleep(.05)
         self.hitlist.update()
         
-    def filename(self, doc_id):
-        return self.db.toms[doc_id]["filename"]
+    def __check_id(self, doc_id):
+        """Make sure the document id isn't a string. If so, split the object id,
+        and return the first element as the document id"""
+        if type(doc_id) == int:
+            return doc_id
+        else:
+            return doc_id.split()[0]
         
+    def filename(self, doc_id):
+        """Return filename given a document id"""
+        doc_id = self.__check_id(doc_id)
+        return self.db.toms[doc_id]["filename"]
+      
     def title(self, doc_id):
+        """Return a title given a document id"""
         return self.db.toms[doc_id]['title']
         
-    def author(self, doc_id):    
+    def author(self, doc_id):
+        """Return an author given a document id"""
+        doc_id = self.__check_id(doc_id)
         return self.db.toms[doc_id]["author"]
         
     def get_excerpt(self, doc_id, highlight=False):
+        """Return a text excerpt by querying PhiloLogic and using 
+        the byte offset to extract the passage"""
+        doc_id = self.__check_id(doc_id)
         index = self.binary_search(doc_id)
         if index:
             offsets = self.hitlist.get_bytes(self.hitlist[index])
@@ -163,6 +182,7 @@ class Doc_info(object):
             self.get_excerpt(doc_id)
         
     def binary_search(self, doc_id, lo=0, hi=None):
+        """Based on the Python bisect module"""
         if hi is None:
             hi = len(self.hitlist)
         while lo < hi:

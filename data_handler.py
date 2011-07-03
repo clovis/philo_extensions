@@ -8,7 +8,7 @@ from os import listdir
 
 
 def np_array_loader(doc_id, path, normalize=True, top=0, lower=-1):
-    np_array = np.load(path + 'doc_arrays/' + str(doc_id) + '.npy')
+    np_array = np.load(path + 'obj_arrays/' + str(doc_id) + '.npy')
     if normalize == True:
         return np_array[top:lower]/np_array[top:lower].sum()
     else:
@@ -19,11 +19,11 @@ def sqlite_conn(path):
     return conn.cursor()
 
 def doc_enumerator(path):
-    doc_num = range(len(listdir(path + 'doc_arrays/')))
+    doc_num = range(len(listdir(path + 'obj_arrays/')))
     return doc_num[1:]
     
 def doc_counter(path):
-    return float(len(listdir(path + 'doc_arrays/')))
+    return float(len(listdir(path + 'obj_arrays/')))
     
 def words_in_doc(path, doc_id):
     db = philologic.PhiloDB.PhiloDB(path,7)
