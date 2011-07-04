@@ -24,7 +24,7 @@ class knn(object):
             self.path = db_path
             self.results = []
             if docs == None:
-                self.docs = doc_enumerator(path)
+                self.docs = doc_enumerator(db_path)
             else:
                 self.docs = docs
             
@@ -35,10 +35,11 @@ class knn(object):
             self.results = self.cursor.fetchall()
             return self.results
         else:
+            print len(self.docs)
             for doc_id in self.docs:
                 doc = np_array_loader(doc_id, self.path, top=self.top, lower=self.lower)
                 self.results.append((doc_id, 1 - self.distance(doc)))
-            return self.results
+            return sorted (self.results, key=itemgetter(1), reverse=True)[:display]
     
     def distance(self, doc):
         return 1 - self.metric(self.orig, doc)

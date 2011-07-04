@@ -15,7 +15,6 @@ class Indexer(object):
     def __init__(self, db, arrays=True, ranked_relevance=True, store_results=False, depth=0):
         self.db_path = '/var/lib/philologic/databases/' + db + '/'
         self.docs = glob(self.db_path + 'WORK/*tei.words.sorted')
-        self.arrays_path = self.db_path + 'obj_arrays/'
         self.store_results = store_results
         self.word_ids()
         self.arrays = arrays
@@ -36,11 +35,6 @@ class Indexer(object):
         if ranked_relevance:
             self.__init__sqlite()
             self.hits_per_word = {}
-        
-        try:
-            makedirs(self.arrays_path, 0755)
-        except OSError:
-            pass
 
     def word_ids(self):
         self.id_to_word = {}
@@ -58,8 +52,15 @@ class Indexer(object):
         
     def make_array(self, obj_id):
         name = '-'.join(obj_id.split())
-        array_path = self.arrays_path + name + '.npy'
-        self.save(array_path, self.doc_array)
+        if self.depth:
+            path = self.db_path + 'obj_arrays/'
+        else:
+            path = self.db_path + 'doc_arrays/'
+        array_path = path + name + '.npy'
+        try:
+            self.save(array_path, self.doc_array)
+        except:
+            makedirs(path, 0755)
         
     def __init__sqlite(self):
         self.conn = sqlite3.connect(self.db_path + 'hits_per_word.sqlite')
