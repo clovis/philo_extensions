@@ -30,8 +30,11 @@ def doc_enumerator(path, doc=True):
         suffix = re.compile('\.npy')
         doc_num = [suffix.sub('', doc) for doc in listdir(path + 'obj_arrays/')]
     
-def doc_counter(path):
-    return float(len(listdir(path + 'obj_arrays/')))
+def doc_counter(path, doc=True):
+    if doc:
+        return float(len(listdir(path + 'doc_arrays/')))
+    else:
+        return float(len(listdir(path + 'obj_arrays/')))
     
 def words_in_doc(path, doc_id):
     db = philologic.PhiloDB.PhiloDB(path,7)

@@ -10,6 +10,12 @@ from data_handler import *
 
 
 class Searcher(object):
+    """Run a search on documents or objects within documents
+    in the SQLite table
+    Three scoring options are available: Frequency, TF-IDF and BM25
+    Two methods of incrementing the scores of results are available:
+    simple addition or best score"""
+    
     
     def __init__(self, query, db, doc_level_search=True, path='/var/lib/philologic/databases/'):
         self.path = path + db + '/'
@@ -18,6 +24,7 @@ class Searcher(object):
         self.results = {}        
         
     def get_hits(self, word, doc=True):
+        """Query the SQLite table and return a list of tuples containing the results"""
         cursor = sqlite_conn(self.path)
         if self.doc_level_search:
             cursor.execute('select doc_id, word_freq, total_words from doc_hits where word=?', (word,))
@@ -26,6 +33,7 @@ class Searcher(object):
         return cursor.fetchall()
         
     def word_to_id(self, query):
+        """Return the ID of the word in order to query the SQLite table"""
         m = mapper(self.path)
         words = []
         for word in query.split():
@@ -35,14 +43,17 @@ class Searcher(object):
         return words
         
     def id_to_word(self, id):
+        """Return the word given its ID"""
         m = mapper(self.path)
         return m[id]
         
     def get_idf(self, hits):
+        """Return IDF score"""
         total_docs = doc_counter(self.path)
         return log(float(total_docs) / float(len(hits))) + 1
                
     def search(self, measure='tf_idf', scoring='simple_scoring', intersect=False, display=10):
+        """Searcher function"""
         self.intersect = False
         if self.words != []:
             for word in self.words:
@@ -144,6 +155,7 @@ class Doc_info(object):
       
     def title(self, doc_id):
         """Return a title given a document id"""
+        doc_id = self.__check_id(doc_id)
         return self.db.toms[doc_id]['title']
         
     def author(self, doc_id):

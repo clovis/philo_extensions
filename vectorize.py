@@ -65,7 +65,6 @@ class Indexer(object):
     def __init__sqlite(self):
         self.conn = sqlite3.connect(self.db_path + 'hits_per_word.sqlite')
         self.c = self.conn.cursor()
-        ## Should I create a different table when I just want doc hits ?
         if self.depth:
             self.c.execute('''create table obj_hits (word int, obj_id text, word_freq int, total_words int)''')
             self.c.execute('''create index word_obj_index on obj_hits(word)''')
