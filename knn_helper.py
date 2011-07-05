@@ -23,6 +23,7 @@ class knn(object):
             self.metric = metric
             self.path = db_path
             self.results = []
+            ## Leave the option to specify a certain subset of docs
             if docs == None:
                 self.docs = doc_enumerator(db_path)
             else:

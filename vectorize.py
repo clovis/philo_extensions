@@ -10,7 +10,8 @@ from os import makedirs
           
 
 class Indexer(object):
-    
+    """Indexes a philologic database and generates numpy arrays for vector space calculations
+    as well as stores word hits in a SQLite table to use for ranked relevance search"""
     
     def __init__(self, db, arrays=True, ranked_relevance=True, store_results=False, depth=0):
         self.db_path = '/var/lib/philologic/databases/' + db + '/'
@@ -37,20 +38,21 @@ class Indexer(object):
             self.hits_per_word = {}
 
     def word_ids(self):
-        self.id_to_word = {}
+        """Map words to integers"""
         self.word_to_id = {}
         word_id = 0
         for line in open(self.db_path + 'WORK/all.frequencies'):
             fields = line.split()
             self.word_to_id[fields[1]] = word_id
-            self.id_to_word[word_id] = fields[1]
             word_id += 1
 
     def __init__array(self, sum_of_words):
+        """Create numpy arrays"""
         self.doc_array = self.zeros(self.word_num, dtype=self.float32)
         self.doc_array[-1] = sum_of_words
         
     def make_array(self, obj_id):
+        """Save numpy arrays to disk"""
         name = '-'.join(obj_id.split())
         if self.depth:
             path = self.db_path + 'obj_arrays/'
@@ -63,6 +65,7 @@ class Indexer(object):
             makedirs(path, 0755)
         
     def __init__sqlite(self):
+        """Initialize SQLite connection"""
         self.conn = sqlite3.connect(self.db_path + 'hits_per_word.sqlite')
         self.c = self.conn.cursor()
         if self.depth:
@@ -73,6 +76,7 @@ class Indexer(object):
             self.c.execute('''create index word_doc_index on doc_hits(word)''')
                
     def index_docs(self): ## depth level beyond doc id
+        """Index documents using *words.sorted files in the WORK directory of the Philologic database"""
         obj_count = 0
         exclude = re.compile('all.words.sorted')
         for doc in self.docs:
@@ -130,42 +134,62 @@ class Indexer(object):
 
 
 class KNN_stored(object):
+    """Class used to store distances between numpy arrays"""
     
     
-    def __init__(self, db_path, arrays_path, high_ram=False):
+    def __init__(self, db_path, arrays_path, docs_only=True, high_ram=False):
+        """The docs_only option lets you specifiy which type of objects you want to generate results for, 
+        full documents, or individual divs.
+        The high_ram option lets you specify which method to use for getting those results, on disk or in memory"""
         try:
             from knn_helper import knn
             self.knn = knn
         except ImportError:
             print >> sys.stderr, "scipy is not installed, KNN results will not be stored"
         
+        files = glob(arrays_path + '*')
         pattern = re.compile(arrays_path + '(\d+)\.npy')
-        skip_divs = re.compile('-')
-        docs = glob(arrays_path + '*')
-        self.docs = [int(pattern.sub('\\1', doc)) for doc in docs if not skip_divs.search(doc)]
+        divs = re.compile('-')
+        if docs_only:
+            self.objects = [int(pattern.sub('\\1', doc)) for doc in files if not divs.search(doc)]
+        else:
+            self.objects = [pattern.sub('\\1', doc) for doc in files if divs.search(doc)]
         self.db_path = db_path
         self.arrays_path = arrays_path
         self.in_mem = high_ram
+        self.docs_only = docs_only
         
     def __init__sqlite(self):
         self.conn = sqlite3.connect(self.db_path + 'knn_results.sqlite')
         self.c = self.conn.cursor()
-        self.c.execute('''drop table if exists results''')
-        self.c.execute('''create table results (doc_id int, neighbor_doc_id int, neighbor_distance real)''')
-        self.c.execute('''create index doc_id_index on results(doc_id)''')
-        self.c.execute('''create index distance_id_index on results(neighbor_distance)''')
+        if self.objects_only:
+            self.c.execute('''create table doc_results (doc_id int, neighbor_doc_id int, neighbor_distance real)''')
+            self.c.execute('''create index doc_id_index on results(doc_id)''')
+            self.c.execute('''create index distance_doc_id_index on results(neighbor_distance)''')
+        else:
+            self.c.execute('''create table obj_results (obj_id text, neighbor_obj_id int, neighbor_distance real)''')
+            self.c.execute('''create index obj_id_index on results(obj_id)''')
+            self.c.execute('''create index distance_obj_id_index on results(neighbor_distance)''')
     
     def store_results(self):
+        """Two methods to generate results:
+        - The first one reads all numpy arrays of disk for each document:
+        This has the advantage of not using a lot of memory, but at the cost of performance
+        - The second one reads all numpy arrays once, thereby being much faster, but at the cost
+        of memory usage which skyrockets."""
         self.__init__sqlite()
         top_words = 100
         lower_words = -100
         count = 0
         if not self.in_mem:
-            for doc in self.docs:
-                k = self.knn(doc, self.db_path, top_words=top_words, lower_words=lower_words)
+            for obj in self.objects:
+                k = self.knn(self.db_path, doc=obj, top_words=top_words, lower_words=lower_words)
                 k.search()
                 for new_doc, distance in k.results:
-                    self.c.execute('insert into results values (?,?,?)', (doc, new_doc, distance))
+                    if self.docs_only:
+                        self.c.execute('insert into doc_results values (?,?,?)', (obj, new_obj, distance))
+                    else:
+                        self.c.execute('insert into obj_results values (?,?,?)', (obj, new_obj, distance))
                 count +=1
                 if count == 10:
                     print '.',
@@ -173,12 +197,15 @@ class KNN_stored(object):
                 self.conn.commit()
         else:
             from scipy.spatial.distance import cosine
-            array_list = [(doc, np_array_loader(doc, self.db_path, top=top_words, lower=lower_words)) for doc in self.docs]
-            for doc, array in array_list:
-                for new_doc, new_array in array_list:
-                    if doc != new_doc:
+            array_list = [(obj, np_array_loader(obj, self.db_path, top=top_words, lower=lower_words)) for obj in self.objects]
+            for obj, array in array_list:
+                for new_obj, new_array in array_list:
+                    if obj != new_obj:
                         result = 1 - cosine(array, new_array)
-                        self.c.execute('insert into results values (?,?,?)', (doc, new_doc, result))
+                        if self.docs_only:
+                            self.c.execute('insert into doc_results values (?,?,?)', (obj, new_obj, result))
+                        else:
+                            self.c.execute('insert into obj_results values (?,?,?)', (obj, new_obj, result))
                 self.conn.commit()
                 count += 1
                 if count == 10:
