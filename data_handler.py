@@ -41,20 +41,7 @@ def words_in_doc(path, doc_id):
     filename = db.toms[doc_id]["filename"] + '.count'
     doc = path + 'WORK/' + filename
     return int(open(doc).readline().rstrip())
-    
-def uniq_words_in_doc(path, doc_id):
-    db = philologic.PhiloDB.PhiloDB(path,7)
-    filename = db.toms[doc_id]["filename"] + '.words.sorted'
-    f = open(path + 'WORK/' + filename)
-    lines = 0
-    buf_size = 1024 * 1024
-    read_f = f.read 
-    buf = read_f(buf_size)
-    while buf:
-        lines += buf.count('\n')
-        buf = read_f(buf_size)
-    return float(lines)
-    
+       
 def uniq_words_in_db(path):
     f = open(path  + 'WORK/all.frequencies')
     lines = 0

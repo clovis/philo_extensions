@@ -129,7 +129,7 @@ class Indexer(object):
             self.c.close()
         
         if self.store_results:
-            storage = VSM_stored(self.db_path, self.arrays_path)
+            storage = KNN_stored(self.db_path, self.arrays_path)
             storage.store_results()
 
 
