@@ -28,33 +28,19 @@ class DocInfo(object):
         time.sleep(.05)
         self.hitlist.update()
         
-    def __check_id(self, doc_id):
-        """Make sure the document id isn't a string. If so, split the object id,
-        and return the first element as the document id"""
-        if type(doc_id) == int:
-            return doc_id
-        else:
-            return doc_id.split()[0]
-        
-    def filename(self, doc_id):
-        """Return filename given a document id"""
-        doc_id = self.__check_id(doc_id)
-        return self.db.toms[doc_id]["filename"]
-      
-    def title(self, doc_id):
-        """Return a title given a document id"""
-        doc_id = self.__check_id(doc_id)
-        return self.db.toms[doc_id]['title']
-        
-    def author(self, doc_id):
-        """Return an author given a document id"""
-        doc_id = self.__check_id(doc_id)
-        return self.db.toms[doc_id]["author"]
+    def get_info(self, obj_id, field):
+        obj_id = tuple(obj_id.split())
+        level = len(obj_id)
+        metadata = None
+        while level > 1:
+            metadata = self.db.toms[obj_id[:level]][field]
+            level -= 1
+        return metadata
         
     def get_excerpt(self, doc_id, highlight=False):
         """Return a text excerpt by querying PhiloLogic and using 
         the byte offset to extract the passage"""
-        doc_id = self.__check_id(doc_id)
+        doc_id = doc_id.split()[0]
         index = self.binary_search(doc_id)
         if index:
             offsets = self.hitlist.get_bytes(self.hitlist[index])

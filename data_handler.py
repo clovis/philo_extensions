@@ -7,8 +7,8 @@ import philologic.PhiloDB
 from os import listdir
 
 
-def np_array_loader(doc_id, path, doc=True, normalize=True, top=0, lower=-1):
-    if doc:
+def np_array_loader(doc_id, path, docs_only=True, normalize=True, top=0, lower=-1):
+    if docs_only:
         np_array = np.load(path + 'doc_arrays/' + str(doc_id) + '.npy')
     else:
         np_array = np.load(path + 'obj_arrays/' + str(doc_id) + '.npy')
@@ -21,20 +21,16 @@ def sqlite_conn(path):
     conn = sqlite3.connect(path + 'hits_per_word.sqlite')
     return conn.cursor()
 
-def doc_enumerator(path, doc=True):
-    if doc:
-        obj = re.compile('-')
+def doc_enumerator(path, docs_only=True):
+    if docs_only:
         suffix = re.compile('(\d+).+')
-        return [int(suffix.sub('\\1', doc)) for doc in listdir(path + 'doc_arrays/') if not obj.search(doc)]
+        return [int(suffix.sub('\\1', doc)) for doc in listdir(path + 'doc_arrays/')]
     else:
         suffix = re.compile('\.npy')
-        doc_num = [suffix.sub('', doc) for doc in listdir(path + 'obj_arrays/')]
+        return [suffix.sub('', doc) for doc in listdir(path + 'obj_arrays/')]
     
 def doc_counter(path, doc=True):
-    if doc:
-        return float(len(listdir(path + 'doc_arrays/')))
-    else:
-        return float(len(listdir(path + 'obj_arrays/')))
+    return float(len(listdir(path)))
     
 def words_in_doc(path, doc_id):
     db = philologic.PhiloDB.PhiloDB(path,7)

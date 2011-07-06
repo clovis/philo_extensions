@@ -18,7 +18,11 @@ class Searcher(object):
         self.path = path + db + '/'
         self.words = self.word_to_id(query)
         self.doc_level_search = doc_level_search
-        self.results = {}        
+        self.results = {}
+        if doc_level_search:
+             self.doc_path = self.path + 'doc_arrays/'
+        else:
+            self.doc_path = self.path + 'obj_arrays/'
         
     def get_hits(self, word, doc=True):
         """Query the SQLite table and return a list of tuples containing the results"""
@@ -46,7 +50,7 @@ class Searcher(object):
         
     def get_idf(self, hits):
         """Return IDF score"""
-        total_docs = doc_counter(self.path)
+        total_docs = doc_counter(self.doc_path)
         return log(float(total_docs) / float(len(hits))) + 1
                
     def search(self, measure='tf_idf', scoring='simple_scoring', intersect=False, display=10):
