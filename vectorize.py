@@ -66,11 +66,12 @@ class Indexer(object):
             if word_cutoff < line_count < endcutoff:
                 word = line.split()[1]
                 count = int(line.split()[0])
-                if word not in self.stopwords and word not in self.word_map and count > min_freq:
+                if word not in self.stopwords and count > min_freq:
                     if self.stemmer:
                         word = self.stemmer.stemWord(word)
-                    self.word_map[word] = word_id
-                    word_id += 1
+                    if word not in self.word_map:
+                        self.word_map[word] = word_id
+                        word_id += 1
         output = open(self.db_path + 'word_num.txt', 'w')
         output.write(str(len(self.word_map)))
         output.close()
@@ -121,30 +122,36 @@ class Indexer(object):
                 word = fields[1]
                 if self.stemmer:
                     word = self.stemmer.stemWord(word)
-                if word not in self.word_map:
-                    continue
-                doc_id = int(fields[2])
-                self.doc = doc_id
-                
-                obj_id = ' '.join(fields[2:endslice])
-                
-                if obj_id not in doc_dict:
-                    doc_dict[obj_id] = {}
-                
-                if word not in doc_dict[obj_id]:
-                    doc_dict[obj_id][word] = 1
-                else:
-                    doc_dict[obj_id][word] += 1
+                if word in self.word_map:
+                    doc_id = int(fields[2])
+                    self.doc = doc_id
+                    
+                    obj_id = ' '.join(fields[2:endslice])
+                    
+                    if obj_id not in doc_dict:
+                        doc_dict[obj_id] = {}
+                    
+                    if word not in doc_dict[obj_id]:
+                        doc_dict[obj_id][word] = 1
+                    else:
+                        doc_dict[obj_id][word] += 1
             
             for obj_id in doc_dict:
-                obj_count += 1
                 sum_of_words = sum([i for i in doc_dict[obj_id].values()])
                 if self.arrays:
                     array = self.__init__array(sum_of_words)
                 
                 for word in doc_dict[obj_id]:
                     if self.arrays:
-                        array[self.word_map[word]] = doc_dict[obj_id][word]
+                        try:
+                            array[self.word_map[word]] = doc_dict[obj_id][word]
+                        except:
+                            print word
+                            print self.word_map[word]
+                            print doc_dict[obj_id][word]
+                            print len(array)
+                            array[self.word_map[word]] = doc_dict[obj_id][word]
+                            sys.exit()
                     if self.r_r:
                         if not self.depth:
                             self.c.execute('insert into doc_hits values (?,?,?,?)', (word, doc_id, doc_dict[obj_id][word], sum_of_words))
@@ -230,8 +237,9 @@ class KNN_stored(object):
             if self.docs_only:
                 array_list = [(obj, np_array_loader(obj, self.db_path, top=100, lower=-100)) for obj in self.objects]
             else:
-                array_list = [(obj, np_array_loader(obj, self.db_path, docs=False, top=100, lower=-100)) for obj in self.objects]
+                array_list = [(obj, np_array_loader(obj, self.db_path, docs_only=False, top=0, lower=-1)) for obj in self.objects]
             for obj, array in array_list:
+                print '.',
                 for new_obj, new_array in array_list:
                     if obj != new_obj:
                         result = 1 - cosine(array, new_array)
