@@ -56,7 +56,7 @@ class Indexer(object):
             if word_cutoff < line_count < endcutoff:
                 word = line.split()[1]
                 count = line.split()[0]
-                if word not in self.stopwords or count > 10:
+                if word not in self.stopwords and count > 10:
                     self.word_map[word] = word_id
                     word_id += 1
         output = open(self.db_path + 'word_num.txt', 'w')

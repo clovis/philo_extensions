@@ -19,6 +19,7 @@ def np_array_loader(doc_id, path, docs_only=True, normalize=True, top=0, lower=-
           
 def sqlite_conn(path):
     conn = sqlite3.connect(path + 'hits_per_word.sqlite')
+    conn.text_factory = str
     return conn.cursor()
 
 def doc_enumerator(path, docs_only=True):
