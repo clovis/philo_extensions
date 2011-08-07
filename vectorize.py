@@ -13,7 +13,7 @@ class Indexer(object):
     """Indexes a philologic database and generates numpy arrays for vector space calculations
     as well as stores word hits in a SQLite table to use for ranked relevance search"""
     
-    def __init__(self, db, arrays=True, relevance_ranking=True, store_results=False, stopwords=False, word_cutoff=0, depth=0):
+    def __init__(self, db, arrays=True, relevance_ranking=True, store_results=False, stopwords=False, stemmer=False, word_cutoff=0, min_freq=10, depth=0):
         self.db_path = '/var/lib/philologic/databases/' + db + '/'
         self.docs = glob(self.db_path + 'WORK/*words.sorted')
         self.store_results = store_results
@@ -24,8 +24,18 @@ class Indexer(object):
         self.stopwords = set([])
         if stopwords:
             self.get_stopwords(stopwords)
+         
+        self.stemmer = stemmer
+        if stemmer:
+            try:
+                from Stemmer import Stemmer
+                self.stemmer = Stemmer(stemmer) # where stemmer is the language selected
+            except KeyError:
+                print >> sys.stderr, "Language not supported by stemmer. No stemming will be done."
+            except ImportError:
+                print >> sys.stderr, "PyStemmer is not installed on your system. No stemming will be done."
             
-        self.word_ids(word_cutoff)
+        self.word_ids(word_cutoff, min_freq)
         
         if self.arrays:
             try:
@@ -47,7 +57,7 @@ class Indexer(object):
             word = word.rstrip()
             self.stopwords.add(word)
 
-    def word_ids(self, word_cutoff):
+    def word_ids(self, word_cutoff, min_freq):
         """Map words to integers"""
         self.word_map = {}
         endcutoff = len([line for line in open(self.db_path + 'WORK/all.frequencies')]) - word_cutoff
@@ -55,8 +65,10 @@ class Indexer(object):
         for line_count, line in enumerate(open(self.db_path + 'WORK/all.frequencies')):
             if word_cutoff < line_count < endcutoff:
                 word = line.split()[1]
-                count = line.split()[0]
-                if word not in self.stopwords and count > 10:
+                count = int(line.split()[0])
+                if word not in self.stopwords and word not in self.word_map and count > min_freq:
+                    if self.stemmer:
+                        word = self.stemmer.stemWord(word)
                     self.word_map[word] = word_id
                     word_id += 1
         output = open(self.db_path + 'word_num.txt', 'w')
@@ -107,6 +119,8 @@ class Indexer(object):
             for line in open(doc):
                 fields = line.split()
                 word = fields[1]
+                if self.stemmer:
+                    word = self.stemmer.stemWord(word)
                 if word not in self.word_map:
                     continue
                 doc_id = int(fields[2])

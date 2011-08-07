@@ -14,7 +14,7 @@ class Searcher(object):
     simple addition or best score"""
     
     
-    def __init__(self, query, db, doc_level_search=True, path='/var/lib/philologic/databases/'):
+    def __init__(self, query, db, doc_level_search=True, stemmer=False, path='/var/lib/philologic/databases/'):
         self.path = path + db + '/'
         self.words = query.split()
         self.doc_level_search = doc_level_search
@@ -23,6 +23,16 @@ class Searcher(object):
              self.doc_path = self.path + 'doc_arrays/'
         else:
             self.doc_path = self.path + 'obj_arrays/'
+        self.stemmer = stemmer
+        if stemmer:
+            try:
+                from Stemmer import Stemmer
+                self.stemmer = Stemmer(stemmer) # where stemmer is the language selected
+                self.words = [self.stemmer.stemWord(word) for word in self.words]
+            except KeyError:
+                print >> sys.stderr, "Language not supported by stemmer. No stemming will be done."
+            except ImportError:
+                print >> sys.stderr, "PyStemmer is not installed on your system. No stemming will be done."
         
     def get_hits(self, word, doc=True):
         """Query the SQLite table and return a list of tuples containing the results"""
