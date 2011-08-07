@@ -13,14 +13,19 @@ class Indexer(object):
     """Indexes a philologic database and generates numpy arrays for vector space calculations
     as well as stores word hits in a SQLite table to use for ranked relevance search"""
     
-    def __init__(self, db, arrays=True, ranked_relevance=True, store_results=False, depth=0):
+    def __init__(self, db, arrays=True, relevance_ranking=True, store_results=False, stopwords=False, word_cutoff=0, depth=0):
         self.db_path = '/var/lib/philologic/databases/' + db + '/'
         self.docs = glob(self.db_path + 'WORK/*words.sorted')
         self.store_results = store_results
-        self.word_ids()
         self.arrays = arrays
-        self.r_r = ranked_relevance
+        self.r_r = relevance_ranking
         self.depth = depth
+        
+        self.stopwords = set([])
+        if stopwords:
+            self.get_stopwords(stopwords)
+            
+        self.word_ids(word_cutoff)
         
         if self.arrays:
             try:
@@ -28,23 +33,35 @@ class Indexer(object):
                 self.zeros = zeros
                 self.float32 = float32
                 self.save = save
-                self.word_num = len(self.word_to_id) + 1 # last column for sum of words in doc
+                self.word_num = len(self.word_map) + 1 # last column for sum of words in doc
             except ImportError:
                 self.arrays = False
                 print >> sys.stderr, "numpy is not installed, numpy arrays won't be generated"
             
-        if ranked_relevance:
+        if relevance_ranking:
             self.__init__sqlite()
             self.hits_per_word = {}
+            
+    def get_stopwords(self, path):
+        for word in open(path):
+            word = word.rstrip()
+            self.stopwords.add(word)
 
-    def word_ids(self):
+    def word_ids(self, word_cutoff):
         """Map words to integers"""
-        self.word_to_id = {}
+        self.word_map = {}
+        endcutoff = len([line for line in open(self.db_path + 'WORK/all.frequencies')]) - word_cutoff
         word_id = 0
-        for line in open(self.db_path + 'WORK/all.frequencies'):
-            fields = line.split()
-            self.word_to_id[fields[1]] = word_id
-            word_id += 1
+        for line_count, line in enumerate(open(self.db_path + 'WORK/all.frequencies')):
+            if word_cutoff < line_count < endcutoff:
+                word = line.split()[1]
+                count = line.split()[0]
+                if word not in self.stopwords or count > 10:
+                    self.word_map[word] = word_id
+                    word_id += 1
+        output = open(self.db_path + 'word_num.txt', 'w')
+        output.write(str(len(self.word_map)))
+        output.close()
 
     def __init__array(self, sum_of_words):
         """Create numpy arrays"""
@@ -68,12 +85,13 @@ class Indexer(object):
     def __init__sqlite(self):
         """Initialize SQLite connection"""
         self.conn = sqlite3.connect(self.db_path + 'hits_per_word.sqlite')
+        self.conn.text_factory = str 
         self.c = self.conn.cursor()
         if self.depth:
-            self.c.execute('''create table obj_hits (word int, obj_id text, word_freq int, total_words int)''')
+            self.c.execute('''create table obj_hits (word text, obj_id text, word_freq int, total_words int)''')
             self.c.execute('''create index word_obj_index on obj_hits(word)''')
         else:
-            self.c.execute('''create table doc_hits (word int, doc_id int, word_freq int, total_words int)''')
+            self.c.execute('''create table doc_hits (word text, doc_id int, word_freq int, total_words int)''')
             self.c.execute('''create index word_doc_index on doc_hits(word)''')
                
     def index_docs(self): ## depth level beyond doc id
@@ -83,11 +101,14 @@ class Indexer(object):
         for doc in self.docs:
             if exclude.search(doc):
                 continue
+            print 'one done'
             doc_dict = {}
             endslice = 3 + self.depth
             for line in open(doc):
                 fields = line.split()
-                word_id = int(self.word_to_id[fields[1]])
+                word = fields[1]
+                if word not in self.word_map:
+                    continue
                 doc_id = int(fields[2])
                 self.doc = doc_id
                 
@@ -96,10 +117,10 @@ class Indexer(object):
                 if obj_id not in doc_dict:
                     doc_dict[obj_id] = {}
                 
-                if word_id not in doc_dict[obj_id]:
-                    doc_dict[obj_id][word_id] = 1
+                if word not in doc_dict[obj_id]:
+                    doc_dict[obj_id][word] = 1
                 else:
-                    doc_dict[obj_id][word_id] += 1
+                    doc_dict[obj_id][word] += 1
             
             for obj_id in doc_dict:
                 obj_count += 1
@@ -107,23 +128,17 @@ class Indexer(object):
                 if self.arrays:
                     array = self.__init__array(sum_of_words)
                 
-                for word_id in doc_dict[obj_id]:
+                for word in doc_dict[obj_id]:
                     if self.arrays:
-                        array[word_id] = doc_dict[obj_id][word_id]
+                        array[self.word_map[word]] = doc_dict[obj_id][word]
                     if self.r_r:
                         if not self.depth:
-                            self.c.execute('insert into doc_hits values (?,?,?,?)', (word_id, doc_id, doc_dict[obj_id][word_id], sum_of_words))
+                            self.c.execute('insert into doc_hits values (?,?,?,?)', (word, doc_id, doc_dict[obj_id][word], sum_of_words))
                         else:
-                            self.c.execute('insert into obj_hits values (?,?,?,?)', (word_id, obj_id, doc_dict[obj_id][word_id], sum_of_words))
+                            self.c.execute('insert into obj_hits values (?,?,?,?)', (word, obj_id, doc_dict[obj_id][word], sum_of_words))
                 
                 if self.arrays:
                     self.make_array(obj_id, array)
-                
-            if self.r_r:
-                if obj_count > 2000:
-                    #self.conn.commit()
-                    print '.',
-                    obj_count = 0
         
         if self.r_r:
             self.conn.commit()

@@ -39,15 +39,7 @@ def words_in_doc(path, doc_id):
     return int(open(doc).readline().rstrip())
        
 def uniq_words_in_db(path):
-    f = open(path  + 'WORK/all.frequencies')
-    lines = 0
-    buf_size = 1024 * 1024
-    read_f = f.read 
-    buf = read_f(buf_size)
-    while buf:
-        lines += buf.count('\n')
-        buf = read_f(buf_size)
-    return float(lines)
+    return int(open(path + 'word_num.txt').readline().rstrip())
     
 def avg_doc_length(path):
     word_count = uniq_words_in_db(path)

@@ -29,13 +29,17 @@ class DocInfo(object):
         self.hitlist.update()
         
     def get_info(self, obj_id, field):
-        obj_id = tuple(obj_id.split())
-        level = len(obj_id)
-        metadata = None
-        while level > 1:
-            metadata = self.db.toms[obj_id[:level]][field]
-            level -= 1
+        try:
+            obj_id = tuple(obj_id.split())
+            level = len(obj_id)
+            metadata = None
+            while level > 1:
+                metadata = self.db.toms[obj_id[:level]][field]
+                level -= 1
+        except AttributeError:
+            metadata = self.db.toms[obj_id][field]
         return metadata
+            
         
     def get_excerpt(self, doc_id, highlight=False):
         """Return a text excerpt by querying PhiloLogic and using 

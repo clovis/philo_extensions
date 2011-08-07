@@ -16,7 +16,7 @@ class Searcher(object):
     
     def __init__(self, query, db, doc_level_search=True, path='/var/lib/philologic/databases/'):
         self.path = path + db + '/'
-        self.words = self.word_to_id(query)
+        self.words = query.split()
         self.doc_level_search = doc_level_search
         self.results = {}
         if doc_level_search:
@@ -33,16 +33,6 @@ class Searcher(object):
             cursor.execute('select obj_id, word_freq, total_words from obj_hits where word=?', (word,))
         return cursor.fetchall()
         
-    def word_to_id(self, query):
-        """Return the ID of the word in order to query the SQLite table"""
-        m = mapper(self.path)
-        words = []
-        for word in query.split():
-            word_info = m.id_and_freq(word)
-            if word_info != None:
-                words.append(word_info)
-        return words
-        
     def id_to_word(self, id):
         """Return the word given its ID"""
         m = mapper(self.path)
@@ -58,9 +48,8 @@ class Searcher(object):
         self.intersect = False
         if self.words != []:
             for word in self.words:
-                term, term_freq = word
-                hits = self.get_hits(term)
-                getattr(self, measure)(term_freq, hits, scoring)
+                hits = self.get_hits(word)
+                getattr(self, measure)(hits, scoring)
                 if intersect:
                     if self.intersect:
                         self.docs = self.docs.intersection(self.new_docs)
@@ -75,19 +64,23 @@ class Searcher(object):
         else:
             return []
     
-    def tf_idf(self, term_freq, hits, scoring):
+    def debug_score(self, hits, scoring):
+        for obj_id, word_freq, word_sum in hits:
+            getattr(self, scoring)(obj_id, word_freq)
+    
+    def tf_idf(self, hits, scoring):
         idf = self.get_idf(hits)
         for obj_id, word_freq, word_sum in hits:
             tf = float(word_freq) / float(word_sum)
             score = tf * idf
             getattr(self, scoring)(obj_id, score)
                     
-    def frequency(self, term_freq, hits, scoring):
+    def frequency(self, hits, scoring):
         for obj_id, word_freq, word_sum in hits:
             score = float(word_freq) / float(word_sum)
             getattr(self, scoring)(obj_id, score)
                     
-    def bm25(self, term_freq, hits, scoring, k1=1.2, b=0.75):
+    def bm25(self, hits, scoring, k1=1.2, b=0.75):
         ## a floor is applied to normalized length of doc
         ## in order to diminish the importance of small docs
         ## see http://xapian.org/docs/bm25.html
