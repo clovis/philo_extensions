@@ -202,10 +202,12 @@ class KNN_stored(object):
         if self.docs_only:
             self.c.execute('''create table doc_results (doc_id int, neighbor_doc_id int, neighbor_distance real)''')
             self.c.execute('''create index doc_id_index on doc_results(doc_id)''')
+            self.c.execute('''create index neighbor_doc_id_index on doc_results(neighbor_doc_id)''')
             self.c.execute('''create index distance_doc_id_index on doc_results(neighbor_distance)''')
         else:
             self.c.execute('''create table obj_results (obj_id text, neighbor_obj_id int, neighbor_distance real)''')
             self.c.execute('''create index obj_id_index on obj_results(obj_id)''')
+            self.c.execute('''create index neighbor_obj_id_index on obj_results(neighbor_obj_id)''')
             self.c.execute('''create index distance_obj_id_index on obj_results(neighbor_distance)''')
     
     def store_results(self):
@@ -238,19 +240,21 @@ class KNN_stored(object):
                 array_list = [(obj, np_array_loader(obj, self.db_path, top=100, lower=-100)) for obj in self.objects]
             else:
                 array_list = [(obj, np_array_loader(obj, self.db_path, docs_only=False, top=0, lower=-1)) for obj in self.objects]
+                
+            already_done = set([])
             for obj, array in array_list:
                 print '.',
                 for new_obj, new_array in array_list:
-                    if obj != new_obj:
+                    if obj != new_obj and new_obj not in already_done:
                         result = 1 - cosine(array, new_array)
                         if self.docs_only:
                             self.c.execute('insert into doc_results values (?,?,?)', (obj, new_obj, result))
                         else:
                             self.c.execute('insert into obj_results values (?,?,?)', (obj, new_obj, result))
+                already_done.add(obj)
                 count += 1
-                if count == 100:
+                if count == 1000:
                     self.conn.commit()
-                    print '.',
                     count = 0
         
         self.conn.commit()

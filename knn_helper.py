@@ -32,15 +32,20 @@ class knn(object):
             
     def search(self, doc_id, display=10):
         if self.stored:
-            query = 'select neighbor_doc_id, neighbor_distance from doc_results where doc_id = %d order by neighbor_distance desc limit %d' % (doc_id, display)
+            query = 'select doc_id, neighbor_doc_id, neighbor_distance from doc_results where doc_id = %d or neighbor_doc_id = %d order by neighbor_distance desc limit %d' % (doc_id, doc_id, display)
             self.cursor.execute(query)
-            self.results = self.cursor.fetchall()
-            return self.results
+            self.results = []
+            for doc, other_doc, distance in self.cursor.fetchall():
+                if doc != doc_id:
+                    self.results.append((doc, distance))
+                else:
+                    self.results.append((other_doc, distance))
+            return results
         else:
             for doc_id in self.docs:
                 doc = np_array_loader(doc_id, self.path, docs_only=self.docs_only, top=100, lower=-100)
                 self.results.append((doc_id, self.distance(doc)))
-            return sorted (self.results, key=itemgetter(1), reverse=True)[:display]
+            return sorted(self.results, key=itemgetter(1), reverse=True)[:display]
     
     def distance(self, doc):
         return 1 - self.metric(self.orig, doc)
