@@ -6,6 +6,7 @@ import sqlite3
 from data_handler import np_array_loader
 from glob import glob
 from os import makedirs, listdir
+from operator import itemgetter
 
           
 
@@ -13,13 +14,16 @@ class Indexer(object):
     """Indexes a philologic database and generates numpy arrays for vector space calculations
     as well as stores word hits in a SQLite table to use for ranked relevance search"""
     
-    def __init__(self, db, arrays=True, relevance_ranking=True, store_results=False, stopwords=False, stemmer=False, word_cutoff=0, min_freq=10, depth=0):
+    def __init__(self, db, arrays=True, relevance_ranking=True, store_results=False, stopwords=False, stemmer=False, 
+                word_cutoff=0, min_freq=10, min_words=100, max_words=10000, depth=0):
         self.db_path = '/var/lib/philologic/databases/' + db + '/'
         self.docs = glob(self.db_path + 'WORK/*words.sorted')
         self.store_results = store_results
         self.arrays = arrays
         self.r_r = relevance_ranking
         self.depth = depth
+        self.min_words = min_words
+        self.max_words = max_words
         
         self.stopwords = set([])
         if stopwords:
@@ -138,27 +142,19 @@ class Indexer(object):
             
             for obj_id in doc_dict:
                 sum_of_words = sum([i for i in doc_dict[obj_id].values()])
-                if self.arrays:
+                if self.arrays and self.min_words < sum_of_words < self.max_words:
                     array = self.__init__array(sum_of_words)
                 
                 for word in doc_dict[obj_id]:
-                    if self.arrays:
-                        try:
-                            array[self.word_map[word]] = doc_dict[obj_id][word]
-                        except:
-                            print word
-                            print self.word_map[word]
-                            print doc_dict[obj_id][word]
-                            print len(array)
-                            array[self.word_map[word]] = doc_dict[obj_id][word]
-                            sys.exit()
+                    if self.arrays and self.min_words < sum_of_words < self.max_words:
+                        array[self.word_map[word]] = doc_dict[obj_id][word]
                     if self.r_r:
                         if not self.depth:
                             self.c.execute('insert into doc_hits values (?,?,?,?)', (word, doc_id, doc_dict[obj_id][word], sum_of_words))
                         else:
                             self.c.execute('insert into obj_hits values (?,?,?,?)', (word, obj_id, doc_dict[obj_id][word], sum_of_words))
                 
-                if self.arrays:
+                if self.arrays and self.min_words < sum_of_words < self.max_words:
                     self.make_array(obj_id, array)
         
         if self.r_r:
@@ -202,61 +198,63 @@ class KNN_stored(object):
         if self.docs_only:
             self.c.execute('''create table doc_results (doc_id int, neighbor_doc_id int, neighbor_distance real)''')
             self.c.execute('''create index doc_id_index on doc_results(doc_id)''')
-            self.c.execute('''create index neighbor_doc_id_index on doc_results(neighbor_doc_id)''')
+            #self.c.execute('''create index neighbor_doc_id_index on doc_results(neighbor_doc_id)''')
             self.c.execute('''create index distance_doc_id_index on doc_results(neighbor_distance)''')
         else:
             self.c.execute('''create table obj_results (obj_id text, neighbor_obj_id int, neighbor_distance real)''')
             self.c.execute('''create index obj_id_index on obj_results(obj_id)''')
-            self.c.execute('''create index neighbor_obj_id_index on obj_results(neighbor_obj_id)''')
+            #self.c.execute('''create index neighbor_obj_id_index on obj_results(neighbor_obj_id)''')
             self.c.execute('''create index distance_obj_id_index on obj_results(neighbor_distance)''')
     
+    def write_to_disk(self, results):
+        for obj, new_obj, result in results:
+            if self.docs_only:
+                self.c.execute('insert into doc_results values (?,?,?)', (obj, new_obj, result))
+            else:
+                self.c.execute('insert into obj_results values (?,?,?)', (obj, new_obj, result))
+        self.conn.commit()
+    
     def store_results(self):
-        """Two methods to generate results:
-        - The first one reads all numpy arrays of disk for each document:
-        This has the advantage of not using a lot of memory, but at the cost of performance
-        - The second one reads all numpy arrays once, thereby being much faster, but at the cost
-        of memory usage which skyrockets."""
+        """This will load all numpy arrays saved on disk and compute the cosine distance for each
+        array in the corpus"""
+        from scipy.spatial.distance import cosine
         self.__init__sqlite()
         top_words = 100
         lower_words = -100
+        results = []
         count = 0
-        if not self.in_mem:
-            for obj in self.objects:
-                k = self.knn(self.db_path, doc=obj, docs_only=self.docs_only, top_words=top_words, lower_words=lower_words)
-                k.search(obj)
-                for new_obj, distance in k.results:
-                    if self.docs_only:
-                        self.c.execute('insert into doc_results values (?,?,?)', (obj, new_obj, distance))
-                    else:
-                        self.c.execute('insert into obj_results values (?,?,?)', (obj, new_obj, distance))
-                count +=1
-                print '.',
-                if count == 100:
-                    self.conn.commit()
-                    count = 0
+        one = 0
+        if self.docs_only:
+            array_list = [(obj, np_array_loader(obj, self.db_path, top=100, lower=-100)) for obj in self.objects]
         else:
-            from scipy.spatial.distance import cosine
-            if self.docs_only:
-                array_list = [(obj, np_array_loader(obj, self.db_path, top=100, lower=-100)) for obj in self.objects]
-            else:
-                array_list = [(obj, np_array_loader(obj, self.db_path, docs_only=False, top=0, lower=-1)) for obj in self.objects]
-                
-            already_done = set([])
-            for obj, array in array_list:
+            array_list = [(obj, np_array_loader(obj, self.db_path, docs_only=False, top=0, lower=-1)) for obj in self.objects]
+        ten_percent = len(array_list)/10
+        one_percent = len(array_list)/100
+        for obj, array in array_list:
+            full_results = []
+            for new_obj, new_array in array_list:
+                if obj != new_obj:
+                    result = 1 - cosine(array, new_array)
+                    full_results.append((obj, new_obj, result))
+            results += sorted(full_results, key=itemgetter(2), reverse=True)[:100]
+            count += 1
+            one += 1
+            if count > ten_percent:
+                print '+',
+                self.write_to_disk(results)
+                count = 0
+                one = 0
+                results = []
+            elif one > one_percent:
                 print '.',
-                for new_obj, new_array in array_list:
-                    if obj != new_obj and new_obj not in already_done:
-                        result = 1 - cosine(array, new_array)
-                        if self.docs_only:
-                            self.c.execute('insert into doc_results values (?,?,?)', (obj, new_obj, result))
-                        else:
-                            self.c.execute('insert into obj_results values (?,?,?)', (obj, new_obj, result))
-                already_done.add(obj)
-                count += 1
-                if count == 1000:
-                    self.conn.commit()
-                    count = 0
-        
+                one = 0
+        print 'done with calculations...writing last bits to disk...'
+        for obj, new_obj, result in results:
+            if self.docs_only:
+                self.c.execute('insert into doc_results values (?,?,?)', (obj, new_obj, result))
+            else:
+                self.c.execute('insert into obj_results values (?,?,?)', (obj, new_obj, result))
+    
         self.conn.commit()
         self.c.close()
         
