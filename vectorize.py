@@ -170,7 +170,7 @@ class KNN_stored(object):
     """Class used to store distances between numpy arrays"""
     
     
-    def __init__(self, db_path, arrays_path, docs_only=True, high_ram=False):
+    def __init__(self, db_path, arrays_path, docs_only=True, limit_results=100):
         """The docs_only option lets you specifiy which type of objects you want to generate results for, 
         full documents, or individual divs.
         The high_ram option lets you specify which method to use for getting those results, on disk or in memory"""
@@ -189,8 +189,8 @@ class KNN_stored(object):
             self.objects = [pattern.sub('\\1', doc) for doc in files if divs.search(doc)]
         self.db_path = db_path
         self.arrays_path = arrays_path
-        self.in_mem = high_ram
         self.docs_only = docs_only
+        self.limit = limit_results
         
     def __init__sqlite(self):
         self.conn = sqlite3.connect(self.db_path + 'knn_results.sqlite')
@@ -198,12 +198,10 @@ class KNN_stored(object):
         if self.docs_only:
             self.c.execute('''create table doc_results (doc_id int, neighbor_doc_id int, neighbor_distance real)''')
             self.c.execute('''create index doc_id_index on doc_results(doc_id)''')
-            #self.c.execute('''create index neighbor_doc_id_index on doc_results(neighbor_doc_id)''')
             self.c.execute('''create index distance_doc_id_index on doc_results(neighbor_distance)''')
         else:
-            self.c.execute('''create table obj_results (obj_id text, neighbor_obj_id int, neighbor_distance real)''')
+            self.c.execute('''create table obj_results (obj_id text, neighbor_obj_id text, neighbor_distance real)''')
             self.c.execute('''create index obj_id_index on obj_results(obj_id)''')
-            #self.c.execute('''create index neighbor_obj_id_index on obj_results(neighbor_obj_id)''')
             self.c.execute('''create index distance_obj_id_index on obj_results(neighbor_distance)''')
     
     def write_to_disk(self, results):
@@ -236,7 +234,7 @@ class KNN_stored(object):
                 if obj != new_obj:
                     result = 1 - cosine(array, new_array)
                     full_results.append((obj, new_obj, result))
-            results += sorted(full_results, key=itemgetter(2), reverse=True)[:100]
+            results += sorted(full_results, key=itemgetter(2), reverse=True)[:self.limit]
             count += 1
             one += 1
             if count > ten_percent:
