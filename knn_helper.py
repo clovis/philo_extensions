@@ -9,10 +9,10 @@ from word_mapper import mapper
 
 class knn(object):
     
-    def __init__(self, db_path, doc=None, docs=None, docs_only=True, top_words=100, lower_words=-100, metric=cosine):
-        self.id_to_word = mapper(db_path + '/WORK/all.frequencies')
+    def __init__(self, db_path, doc=None, docs=None, docs_only=False, metric=cosine):
+        #self.id_to_word = mapper(db_path + '/WORK/all.frequencies')
         self.docs_only = docs_only
-        self.db = db_path + 'vsm_results.sqlite'
+        self.db = db_path + 'knn_results.sqlite'
         self.conn = sqlite3.connect(self.db)
         self.cursor = self.conn.cursor()
         
@@ -21,12 +21,13 @@ class knn(object):
         if self.docs_only:
             query = 'select doc_id, neighbor_doc_id, neighbor_distance from doc_results where doc_id = %d order by neighbor_distance desc limit %d' % (doc_id, display)
         else:
-            query = 'select obj_id, neighbor_obj_id, neighbor_distance from obj_results where obj_id = %d order by neighbor_distance desc limit %d' % (doc_id, display)
+            query = """select neighbor_obj_id, neighbor_distance from obj_results where obj_id = '%s' order by neighbor_distance desc limit %d""" % (doc_id, display)
         self.cursor.execute(query)
         self.results = []
-        for doc, other_doc, distance in self.cursor.fetchall():
-            self.results.append((other_doc, distance))
-        return self.results
+        #for doc, other_doc, distance in self.cursor.fetchall():
+            #self.results.append((other_doc, distance))
+        #return self.results
+        return self.cursor.fetchall()
     
     def distance(self, doc):
         return 1 - self.metric(self.orig, doc)

@@ -30,6 +30,7 @@ class DocInfo(object):
         
     def get_info(self, obj_id, field):
         try:
+            obj_id = obj_id.replace('-', ' ')
             obj_id = tuple(obj_id.split())
             level = len(obj_id)
             metadata = None
