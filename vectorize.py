@@ -15,7 +15,7 @@ class Indexer(object):
     as well as stores word hits in a SQLite table to use for ranked relevance search"""
     
     def __init__(self, db, arrays=True, relevance_ranking=True, store_results=False, stopwords=False, stemmer=False, 
-                word_cutoff=0, min_freq=10, min_words=100, max_words=10000, depth=0):
+                word_cutoff=0, min_freq=10, min_words=100, max_words=None, depth=0):
         self.db_path = '/var/lib/philologic/databases/' + db + '/'
         self.docs = glob(self.db_path + 'WORK/*words.sorted')
         self.store_results = store_results
@@ -23,22 +23,12 @@ class Indexer(object):
         self.r_r = relevance_ranking
         self.depth = depth
         self.min_words = min_words
-        self.max_words = max_words
-        
-        self.stopwords = set([])
-        if stopwords:
-            self.get_stopwords(stopwords)
-         
-        self.stemmer = stemmer
-        if stemmer:
-            try:
-                from Stemmer import Stemmer
-                self.stemmer = Stemmer(stemmer) # where stemmer is the language selected
-            except KeyError:
-                print >> sys.stderr, "Language not supported by stemmer. No stemming will be done."
-            except ImportError:
-                print >> sys.stderr, "PyStemmer is not installed on your system. No stemming will be done."
-            
+        if max_words == None:
+            self.max_words = sum([int(line.split()[0]) for line in open(self.db_path + 'WORK/all.frequencies')])
+        else:
+            self.max_words = max_words
+        self.stopwords = self.get_stopwords(stopwords)
+        self.stemmer = self.load_stemmer(stemmer)       
         self.word_ids(word_cutoff, min_freq)
         
         if self.arrays:
@@ -56,10 +46,25 @@ class Indexer(object):
             self.__init__sqlite()
             self.hits_per_word = {}
             
-    def get_stopwords(self, path):
-        for word in open(path):
-            word = word.rstrip()
-            self.stopwords.add(word)
+    def load_stemmer(self, stemmer):
+        if stemmer:
+            try:
+                from Stemmer import Stemmer
+                return Stemmer(stemmer) # where stemmer is the language selected
+            except KeyError:
+                print >> sys.stderr, "Language not supported by stemmer. No stemming will be done."
+            except ImportError:
+                print >> sys.stderr, "PyStemmer is not installed on your system. No stemming will be done."
+        else:
+            return False
+            
+    def get_stopwords(self, stopwords):
+        stopword_list = set([])
+        if stopwords:
+            for word in open(stopwords):
+                word = word.rstrip()
+                self.stopword_list.add(word)
+        return stopword_list
 
     def word_ids(self, word_cutoff, min_freq):
         """Map words to integers"""
@@ -217,15 +222,13 @@ class KNN_stored(object):
         array in the corpus"""
         from scipy.spatial.distance import cosine
         self.__init__sqlite()
-        top_words = 100
-        lower_words = -100
         results = []
         count = 0
         one = 0
         if self.docs_only:
-            array_list = [(obj, np_array_loader(obj, self.db_path, top=100, lower=-100)) for obj in self.objects]
+            array_list = [(obj, np_array_loader(obj, self.db_path)) for obj in self.objects]
         else:
-            array_list = [(obj, np_array_loader(obj, self.db_path, docs_only=False, top=0, lower=-1)) for obj in self.objects]
+            array_list = [(obj, np_array_loader(obj, self.db_path, docs_only=False)) for obj in self.objects]
         ten_percent = len(array_list)/10
         one_percent = len(array_list)/100
         for obj, array in array_list:

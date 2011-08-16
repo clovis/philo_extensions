@@ -4,10 +4,12 @@
 import philologic.PhiloDB
 import re
 import time
+import sqlite3
+import unicodedata
 
 
 class DocInfo(object):
-    """Helper class meant to provide various information on document.
+    """Helper class meant to provide various information on documents.
     It provides various convenience functions based on the PhiloLogic library"""
     
     def __init__(self, db, query=None, path='/var/lib/philologic/databases/'):
@@ -40,6 +42,18 @@ class DocInfo(object):
         except AttributeError:
             metadata = self.db.toms[obj_id][field]
         return metadata
+        
+    def get_obj_id(self, query):
+        dbh = sqlite3.connect(self.db_path + '/toms.db')
+        dbh.text_factory = str
+        c = dbh.cursor()
+        c.execute("SELECT philo_id, head FROM toms WHERE head LIKE ?;",(query,))
+        result = c.fetchall()
+        if result == []:
+            query = unicodedata.normalize('NFKD', query.decode('utf-8')).encode('ascii','ignore')
+            c.execute("SELECT philo_id, head FROM toms WHERE head LIKE ?;",(query,))
+            result = c.fetchall()
+        return result
             
         
     def get_excerpt(self, doc_id, highlight=False):
@@ -53,7 +67,7 @@ class DocInfo(object):
             conc_start = byte_offset - 200
             if conc_start < 0:
                 conc_start = 0
-            text_path = self.db_path + "/TEXT/" + self.filename(doc_id)
+            text_path = self.db_path + "/TEXT/" + self.get_info(doc_id, 'filename')
             text_file = open(text_path)
             text_file.seek(conc_start)
             text = text_file.read(400)
