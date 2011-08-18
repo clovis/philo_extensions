@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 
 
-import philologic.PhiloDB
+from philologic import PhiloDB, SqlToms
 import re
 import time
 import sqlite3
 import unicodedata
+from difflib import get_close_matches
 
 
 class DocInfo(object):
@@ -14,7 +15,9 @@ class DocInfo(object):
     
     def __init__(self, db, query=None, path='/var/lib/philologic/databases/'):
         self.db_path = path + db
-        self.db = philologic.PhiloDB.PhiloDB(self.db_path,7)
+        self.db = PhiloDB.PhiloDB(self.db_path,7)
+        self.toms = SqlToms.SqlToms(self.db_path +'/toms.db', 7)
+        self.corpus = db
         
         if query:
             self.query = query.split()
@@ -30,30 +33,48 @@ class DocInfo(object):
         time.sleep(.05)
         self.hitlist.update()
         
-    def get_info(self, obj_id, field):
-        try:
-            obj_id = obj_id.replace('-', ' ')
-            obj_id = tuple(obj_id.split())
-            level = len(obj_id)
-            metadata = None
-            while level > 1:
-                metadata = self.db.toms[obj_id[:level]][field]
-                level -= 1
-        except AttributeError:
-            metadata = self.db.toms[obj_id][field]
-        return metadata
+    def get_metadata(self, obj_id, field):
+        return self.__get_info(obj_id=obj_id, field=field)
         
-    def get_obj_id(self, query):
-        dbh = sqlite3.connect(self.db_path + '/toms.db')
-        dbh.text_factory = str
-        c = dbh.cursor()
-        c.execute("SELECT philo_id, head FROM toms WHERE head LIKE ?;",(query,))
-        result = c.fetchall()
-        if result == []:
-            query = unicodedata.normalize('NFKD', query.decode('utf-8')).encode('ascii','ignore')
-            c.execute("SELECT philo_id, head FROM toms WHERE head LIKE ?;",(query,))
-            result = c.fetchall()
-        return result
+    def get_obj_id(self, **metadata):
+        return self.__get_info(**metadata)
+        
+    def __get_info(self, obj_id=False, field=None, **metadata):
+        if obj_id:
+            try:
+                obj_id = obj_id.replace('-', ' ')
+                obj_id = tuple(obj_id.split())
+                level = len(obj_id)
+                info = None
+                while level > 1:
+                    info = self.db.toms[obj_id[:level]][field]
+                    if isinstance(info, str):
+                        break
+                    level -= 1
+            except AttributeError:
+                info = self.db.toms[obj_id][field]
+        else:
+            info = [hit for hit in self.toms.query(**metadata)]
+        return info
+        
+    #def get_obj_id(self, **metadata):
+        #toms = SqlToms.SqlToms(self.db_path +'/toms.db', 7)
+        #result = [hit for hit in toms.query(**metadata)]
+        #return result
+        #if len(result) == 1:
+            #result = result[0]
+        #if result:
+            #return result
+        #else:
+            #result = []
+            #c.execute('select head from toms')
+            #headword_dict = dict([(headword[0].decode('utf-8').lower(), headword[0]) for headword in c.fetchall() if headword[0]  != None])
+            #headword_list = [headword for headword in headword_dict]
+            #close_matches = [headword_dict[word] for word in get_close_matches(query, headword_list, 5)]
+            #for match in close_matches:
+                #c.execute("SELECT philo_id, head FROM toms WHERE head = ?;",(match,))
+                #result.append(c.fetchone())
+            #return result
             
         
     def get_excerpt(self, doc_id, highlight=False):
