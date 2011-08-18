@@ -50,7 +50,7 @@ class DocInfo(object):
                         break
                     level -= 1
             except AttributeError:
-                info = self.db.toms[obj_id][field]
+                info = self.toms[obj_id][field]
         else:
             info = [hit for hit in self.toms.query(**metadata_info)]
         return info

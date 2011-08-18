@@ -15,7 +15,7 @@ class Indexer(object):
     as well as stores word hits in a SQLite table to use for ranked relevance search"""
     
     def __init__(self, db, arrays=True, relevance_ranking=True, store_results=False, stopwords=False, stemmer=False, 
-                word_cutoff=0, min_freq=10, min_words=100, max_words=None, depth=0):
+                word_cutoff=0, min_freq=10, min_words=100, max_words=None, min_percent=0, max_percent=100, depth=0):
         self.db_path = '/var/lib/philologic/databases/' + db + '/'
         self.docs = glob(self.db_path + 'WORK/*words.sorted')
         self.store_results = store_results
@@ -27,6 +27,7 @@ class Indexer(object):
             self.max_words = sum([int(line.split()[0]) for line in open(self.db_path + 'WORK/all.frequencies')])
         else:
             self.max_words = max_words
+        self.word_occurence_in_corpus(min_percent, max_percent)
         self.stopwords = self.get_stopwords(stopwords)
         self.stemmer = self.load_stemmer(stemmer)       
         self.word_ids(word_cutoff, min_freq)
@@ -75,15 +76,39 @@ class Indexer(object):
             if word_cutoff < line_count < endcutoff:
                 word = line.split()[1]
                 count = int(line.split()[0])
-                if word not in self.stopwords and count > min_freq:
+                if word not in self.stopwords and count > min_freq and word in self.words_to_keep:
                     if self.stemmer:
                         word = self.stemmer.stemWord(word)
                     if word not in self.word_map:
                         self.word_map[word] = word_id
                         word_id += 1
-        output = open(self.db_path + 'word_num.txt', 'w')
+        output = open(self.db_path + 'word_num2.txt', 'w')
         output.write(str(len(self.word_map)))
         output.close()
+        
+    def word_occurence_in_corpus(self, min_percent, max_percent):
+        word_occurence = {}
+        for line in open(self.db_path + 'WORK/all.frequencies'):
+            word = line.split()[1]
+            word_occurence[word] = set([])
+        exclude = re.compile('all.words.sorted')
+        count = 0
+        for doc in self.docs:
+            if exclude.search(doc):
+                continue
+            for line in open(doc):
+                fields = line.split()
+                word = fields[1]
+                word_occurence[word].add(doc)
+            count += 1
+            if count == 10:
+                print '.',
+                count = 0
+        doc_num = len(self.docs)
+        self.words_to_keep = set([])
+        for word in word_occurence:
+            if min_percent < (len(word_occurence[word]) / doc_num * 100) < max_percent:
+                self.words_to_keep.add(word)
 
     def __init__array(self, sum_of_words):
         """Create numpy arrays"""
@@ -175,27 +200,31 @@ class KNN_stored(object):
     """Class used to store distances between numpy arrays"""
     
     
-    def __init__(self, db_path, arrays_path, docs_only=True, limit_results=100):
+    def __init__(self, db, path='/var/lib/philologic/databases/', docs_only=True, limit_results=100):
         """The docs_only option lets you specifiy which type of objects you want to generate results for, 
-        full documents, or individual divs.
-        The high_ram option lets you specify which method to use for getting those results, on disk or in memory"""
+        full documents, or individual divs."""
         try:
-            from knn_helper import knn
-            self.knn = knn
+            from scipy.spatial.distance import cosine
+            self.cosine = cosine
         except ImportError:
             print >> sys.stderr, "scipy is not installed, KNN results will not be stored"
         
-        files = listdir(arrays_path)
+        self.db_path = path + db + '/'
+        if docs_only:
+            self.arrays_path = self.db_path + 'doc_arrays/'
+        else:
+            self.arrays_path = self.db_path + 'obj_arrays/'
+        self.docs_only = docs_only
+        self.limit = limit_results
+        
+        files = listdir(self.arrays_path)
         pattern = re.compile('(\d+)\.npy')
         divs = re.compile('-')
         if docs_only:
             self.objects = [int(pattern.sub('\\1', doc)) for doc in files]
         else:
-            self.objects = [doc.replace('.npy', '').replace('-', ' ')) for doc in files]
-        self.db_path = db_path
-        self.arrays_path = arrays_path
-        self.docs_only = docs_only
-        self.limit = limit_results
+            self.objects = [doc.replace('.npy', '').replace('-', ' ') for doc in files]
+        
         
     def __init__sqlite(self):
         self.conn = sqlite3.connect(self.db_path + 'knn_results.sqlite')
@@ -220,7 +249,7 @@ class KNN_stored(object):
     def store_results(self):
         """This will load all numpy arrays saved on disk and compute the cosine distance for each
         array in the corpus"""
-        from scipy.spatial.distance import cosine
+        
         self.__init__sqlite()
         results = []
         count = 0
@@ -235,7 +264,7 @@ class KNN_stored(object):
             full_results = []
             for new_obj, new_array in array_list:
                 if obj != new_obj:
-                    result = 1 - cosine(array, new_array)
+                    result = 1 - self.cosine(array, new_array)
                     full_results.append((obj, new_obj, result))
             results += sorted(full_results, key=itemgetter(2), reverse=True)[:self.limit]
             count += 1
