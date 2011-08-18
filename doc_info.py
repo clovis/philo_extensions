@@ -15,9 +15,7 @@ class DocInfo(object):
     
     def __init__(self, db, query=None, path='/var/lib/philologic/databases/'):
         self.db_path = path + db
-        self.db = PhiloDB.PhiloDB(self.db_path,7)
         self.toms = SqlToms.SqlToms(self.db_path +'/toms.db', 7)
-        self.corpus = db
         
         if query:
             self.query = query.split()
@@ -36,10 +34,10 @@ class DocInfo(object):
     def get_metadata(self, obj_id, field):
         return self.__get_info(obj_id=obj_id, field=field)
         
-    def get_obj_id(self, **metadata):
-        return self.__get_info(**metadata)
+    def get_obj_id(self, **metadata_info):
+        return self.__get_info(**metadata_info)
         
-    def __get_info(self, obj_id=False, field=None, **metadata):
+    def __get_info(self, obj_id=False, field=None, **metadata_info):
         if obj_id:
             try:
                 obj_id = obj_id.replace('-', ' ')
@@ -47,14 +45,14 @@ class DocInfo(object):
                 level = len(obj_id)
                 info = None
                 while level > 1:
-                    info = self.db.toms[obj_id[:level]][field]
+                    info = self.toms[obj_id[:level]][field]
                     if isinstance(info, str):
                         break
                     level -= 1
             except AttributeError:
                 info = self.db.toms[obj_id][field]
         else:
-            info = [hit for hit in self.toms.query(**metadata)]
+            info = [hit for hit in self.toms.query(**metadata_info)]
         return info
         
     #def get_obj_id(self, **metadata):
