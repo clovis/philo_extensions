@@ -189,9 +189,9 @@ class KNN_stored(object):
         pattern = re.compile('(\d+)\.npy')
         divs = re.compile('-')
         if docs_only:
-            self.objects = [int(pattern.sub('\\1', doc)) for doc in files if not divs.search(doc)]
+            self.objects = [int(pattern.sub('\\1', doc)) for doc in files]
         else:
-            self.objects = [pattern.sub('\\1', doc) for doc in files if divs.search(doc)]
+            self.objects = [doc.replace('.npy', '').replace('-', ' ')) for doc in files]
         self.db_path = db_path
         self.arrays_path = arrays_path
         self.docs_only = docs_only
