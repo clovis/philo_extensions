@@ -92,7 +92,6 @@ class Indexer(object):
             word = line.split()[1]
             word_occurence[word] = set([])
         exclude = re.compile('all.words.sorted')
-        count = 0
         for doc in self.docs:
             if exclude.search(doc):
                 continue
@@ -100,10 +99,6 @@ class Indexer(object):
                 fields = line.split()
                 word = fields[1]
                 word_occurence[word].add(doc)
-            count += 1
-            if count == 10:
-                print '.',
-                count = 0
         doc_num = len(self.docs)
         self.words_to_keep = set([])
         for word in word_occurence:
