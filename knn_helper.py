@@ -8,18 +8,24 @@ from word_mapper import mapper
 
 class knn(object):
     
-    def __init__(self, db, path='/var/lib/philologic/databases/', docs_only=False):
+    def __init__(self, db, path='/var/lib/philologic/databases/', docs_only=False, table_name=False):
         self.docs_only = docs_only
-        db = path + db + '/knn_results.sqlite'
+        if table_name:
+            db = path + db + '/' + table_name
+        else:
+            db = path + db + '/knn_results.sqlite'
         self.conn = sqlite3.connect(db)
         self.cursor = self.conn.cursor()
         
             
-    def search(self, doc_id, display=10):
-        if self.docs_only:
-            query = 'select neighbor_doc_id, neighbor_distance from doc_results where doc_id = %d order by neighbor_distance desc limit %d' % (doc_id, display)
-        else:
-            query = """select neighbor_obj_id, neighbor_distance from obj_results where obj_id = '%s' order by neighbor_distance desc limit %d""" % (doc_id, display)
-        self.cursor.execute(query)
-        self.results = []
-        return self.cursor.fetchall()
+    def search(self, obj_id, display=10):
+        level = len(obj_id.split())
+        while level > 1:
+            obj_id = ' '.join(obj_id.split()[:level])
+            query = """select neighbor_obj_id, neighbor_distance from obj_results where obj_id = '%s' order by neighbor_distance desc limit %d""" % (obj_id, display)
+            self.cursor.execute(query)
+            results = self.cursor.fetchall()
+            if results != []:
+                return results
+            level -= 1
+        return []

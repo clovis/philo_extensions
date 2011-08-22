@@ -52,7 +52,7 @@ class DocInfo(object):
             except AttributeError:
                 info = self.toms[obj_id][field]
         else:
-            info = [hit for hit in self.toms.query(**metadata_info)]
+            info = [hit['philo_id'] for hit in self.toms.query(**metadata_info)]
         return info
         
     #def get_obj_id(self, **metadata):

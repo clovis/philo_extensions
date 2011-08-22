@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from __future__ import division
 import re
 import sys
 import sqlite3
@@ -15,7 +16,7 @@ class Indexer(object):
     as well as stores word hits in a SQLite table to use for ranked relevance search"""
     
     def __init__(self, db, arrays=True, relevance_ranking=True, store_results=False, stopwords=False, stemmer=False, 
-                word_cutoff=0, min_freq=10, min_words=100, max_words=None, min_percent=0, max_percent=100, depth=0):
+                word_cutoff=0, min_freq=10, min_words=0, max_words=None, min_percent=0, max_percent=100, depth=0):
         self.db_path = '/var/lib/philologic/databases/' + db + '/'
         self.docs = glob(self.db_path + 'WORK/*words.sorted')
         self.store_results = store_results
@@ -104,6 +105,7 @@ class Indexer(object):
         for word in word_occurence:
             if min_percent < (len(word_occurence[word]) / doc_num * 100) < max_percent:
                 self.words_to_keep.add(word)
+        print len(self.words_to_keep)
 
     def __init__array(self, sum_of_words):
         """Create numpy arrays"""
@@ -195,7 +197,7 @@ class KNN_stored(object):
     """Class used to store distances between numpy arrays"""
     
     
-    def __init__(self, db, path='/var/lib/philologic/databases/', docs_only=True, limit_results=100):
+    def __init__(self, db, path='/var/lib/philologic/databases/', table_name=False, limit_results=100):
         """The docs_only option lets you specifiy which type of objects you want to generate results for, 
         full documents, or individual divs."""
         try:
@@ -205,10 +207,8 @@ class KNN_stored(object):
             print >> sys.stderr, "scipy is not installed, KNN results will not be stored"
         
         self.db_path = path + db + '/'
-        if docs_only:
-            self.arrays_path = self.db_path + 'doc_arrays/'
-        else:
-            self.arrays_path = self.db_path + 'obj_arrays/'
+
+        self.arrays_path = self.db_path + 'obj_arrays/'
         self.docs_only = docs_only
         self.limit = limit_results
         
@@ -218,27 +218,19 @@ class KNN_stored(object):
         if docs_only:
             self.objects = [int(pattern.sub('\\1', doc)) for doc in files]
         else:
-            self.objects = [doc.replace('.npy', '').replace('-', ' ') for doc in files]
+            self.objects = [doc.replace('.npy', '') for doc in files]
         
         
     def __init__sqlite(self):
-        self.conn = sqlite3.connect(self.db_path + 'knn_results.sqlite')
+        self.conn = sqlite3.connect(self.db_path + 'knn_results2.sqlite')
         self.c = self.conn.cursor()
-        if self.docs_only:
-            self.c.execute('''create table doc_results (doc_id int, neighbor_doc_id int, neighbor_distance real)''')
-            self.c.execute('''create index doc_id_index on doc_results(doc_id)''')
-            self.c.execute('''create index distance_doc_id_index on doc_results(neighbor_distance)''')
-        else:
-            self.c.execute('''create table obj_results (obj_id text, neighbor_obj_id text, neighbor_distance real)''')
-            self.c.execute('''create index obj_id_index on obj_results(obj_id)''')
-            self.c.execute('''create index distance_obj_id_index on obj_results(neighbor_distance)''')
+        self.c.execute('''create table obj_results (obj_id text, neighbor_obj_id text, neighbor_distance real)''')
+        self.c.execute('''create index obj_id_index on obj_results(obj_id)''')
+        self.c.execute('''create index distance_obj_id_index on obj_results(neighbor_distance)''')
     
     def write_to_disk(self, results):
         for obj, new_obj, result in results:
-            if self.docs_only:
-                self.c.execute('insert into doc_results values (?,?,?)', (obj, new_obj, result))
-            else:
-                self.c.execute('insert into obj_results values (?,?,?)', (obj, new_obj, result))
+            self.c.execute('insert into obj_results values (?,?,?)', (obj, new_obj, result))
         self.conn.commit()
     
     def store_results(self):
@@ -249,10 +241,7 @@ class KNN_stored(object):
         results = []
         count = 0
         one = 0
-        if self.docs_only:
-            array_list = [(obj, np_array_loader(obj, self.db_path)) for obj in self.objects]
-        else:
-            array_list = [(obj, np_array_loader(obj, self.db_path, docs_only=False)) for obj in self.objects]
+        array_list = [(obj.replace('-', ' '), np_array_loader(obj, self.db_path)) for obj in self.objects]
         ten_percent = len(array_list)/10
         one_percent = len(array_list)/100
         for obj, array in array_list:
@@ -275,10 +264,7 @@ class KNN_stored(object):
                 one = 0
         print 'done with calculations...writing last bits to disk...'
         for obj, new_obj, result in results:
-            if self.docs_only:
-                self.c.execute('insert into doc_results values (?,?,?)', (obj, new_obj, result))
-            else:
-                self.c.execute('insert into obj_results values (?,?,?)', (obj, new_obj, result))
+            self.c.execute('insert into obj_results values (?,?,?)', (obj, new_obj, result))
     
         self.conn.commit()
         self.c.close()

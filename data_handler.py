@@ -7,11 +7,8 @@ import philologic.PhiloDB
 from os import listdir
 
 
-def np_array_loader(doc_id, path, docs_only=True, normalize=True, top=0, lower=-1):
-    if docs_only:
-        np_array = np.load(path + 'doc_arrays/' + str(doc_id) + '.npy')
-    else:
-        np_array = np.load(path + 'obj_arrays/' + str(doc_id) + '.npy')
+def np_array_loader(obj_id, path, normalize=True, top=0, lower=-1):
+    np_array = np.load(path + 'obj_arrays/' + str(obj_id) + '.npy')
     if normalize == True:
         return np_array[top:lower]/np_array[top:lower].sum()
     else:
@@ -30,7 +27,7 @@ def doc_enumerator(path, docs_only=True):
         suffix = re.compile('\.npy')
         return [suffix.sub('', doc) for doc in listdir(path + 'obj_arrays/')]
     
-def doc_counter(path, doc=True):
+def doc_counter(path):
     return float(len(listdir(path)))
     
 def words_in_doc(path, doc_id):
