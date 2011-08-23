@@ -7,7 +7,7 @@ import philologic.PhiloDB
 from os import listdir
 
 
-def np_array_loader(obj_id, path, normalize=True, top=0, lower=None):
+def np_load(obj_id, path, normalize=True, top=0, lower=None):
     np_array = np.load(path + 'obj_arrays/' + str(obj_id) + '.npy')
     if normalize == True:
         return np_array[top:lower]/np_array[top:lower].sum()
