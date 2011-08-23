@@ -4,7 +4,7 @@ from __future__ import division
 import re
 import sys
 import sqlite3
-from data_handler import np_array_loader
+from data_handler import np_load
 from glob import glob
 from os import makedirs, listdir, path
 from operator import itemgetter
@@ -17,6 +17,7 @@ class Indexer(object):
     
     def __init__(self, db, arrays=True, relevance_ranking=True, store_results=False, stopwords=False, stemmer=False, 
                 word_cutoff=0, min_freq=10, min_words=0, max_words=None, min_percent=0, max_percent=100, depth=0):
+        """The depth variable defines how far to go in the tree. The value 0 corresponds to the doc level"""
         self.db_path = '/var/lib/philologic/databases/' + db + '/'
         self.docs = glob(self.db_path + 'WORK/*words.sorted')
         self.store_results = store_results
@@ -137,7 +138,7 @@ class Indexer(object):
             self.c.execute('''create table doc_hits (word text, doc_id int, word_freq int, total_words int)''')
             self.c.execute('''create index word_doc_index on doc_hits(word)''')
                
-    def index_docs(self): ## depth level beyond doc id
+    def index_docs(self): 
         """Index documents using *words.sorted files in the WORK directory of the Philologic database"""
         obj_count = 0
         exclude = re.compile('all.words.sorted')
@@ -167,22 +168,26 @@ class Indexer(object):
                         doc_dict[obj_id][word] += 1
             
             for obj_id in doc_dict:
-                sum_of_words = sum([i for i in doc_dict[obj_id].values()])
+                word_count = sum([i for i in doc_dict[obj_id].values()])
                 
                 ## Check if arrays are to be generated
-                if self.arrays and self.min_words < sum_of_words < self.max_words:
+                if self.arrays and self.min_words < word_count < self.max_words:
                     array = self.__init__array()
                 
+                ## Iterate through each word in the doc and populate arrays
+                ## and insert values in SQLite table
                 for word in doc_dict[obj_id]:
-                    if self.arrays and self.min_words < sum_of_words < self.max_words:
+                    if self.arrays and self.min_words < word_count < self.max_words:
                         array[self.word_map[word]] = doc_dict[obj_id][word]
                     if self.r_r:
                         if not self.depth:
-                            self.c.execute('insert into doc_hits values (?,?,?,?)', (word, doc_id, doc_dict[obj_id][word], sum_of_words))
+                            self.c.execute('insert into doc_hits values (?,?,?,?)', (word, doc_id, doc_dict[obj_id][word], word_count))
                         else:
-                            self.c.execute('insert into obj_hits values (?,?,?,?)', (word, obj_id, doc_dict[obj_id][word], sum_of_words))
+                            self.c.execute('insert into obj_hits values (?,?,?,?)', (word, obj_id, doc_dict[obj_id][word], word_count))
                 
-                if self.arrays and self.min_words < sum_of_words < self.max_words:
+                ## Save array only if the word count is higher than self.min_words
+                ## and less then self.max_words
+                if self.arrays and self.min_words < word_count < self.max_words:
                     self.make_array(obj_id, array)
         
         if self.r_r:
@@ -239,7 +244,7 @@ class KNN_stored(object):
         results = []
         count = 0
         one = 0
-        array_list = [(obj.replace('-', ' '), np_array_loader(obj, self.db_path)) for obj in self.objects]
+        array_list = [(obj.replace('-', ' '), np_load(obj, self.db_path)) for obj in self.objects]
         ten_percent = len(array_list)/10
         one_percent = len(array_list)/100
         for obj, array in array_list:
@@ -266,56 +271,6 @@ class KNN_stored(object):
     
         self.conn.commit()
         self.c.close()
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
         
         
         
