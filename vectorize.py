@@ -39,7 +39,7 @@ class Indexer(object):
                 self.zeros = zeros
                 self.float32 = float32
                 self.save = save
-                self.word_num = len(self.word_map) + 1 # last column for sum of words in doc
+                self.word_num = len(self.word_map)
                 self.array_path = self.db_path + 'obj_arrays/'
                 if not path.isdir(self.array_path):
                     makedirs(self.array_path, 0755)
@@ -114,10 +114,9 @@ class Indexer(object):
             if min_percent < (len(word_occurence[word]) / doc_num * 100) < max_percent:
                 self.words_to_keep.add(word)
 
-    def __init__array(self, sum_of_words):
+    def __init__array(self):
         """Create numpy arrays"""
         array = self.zeros(self.word_num, dtype=self.float32)
-        array[-1] = sum_of_words
         return array
         
     def make_array(self, obj_id, array):
@@ -169,8 +168,10 @@ class Indexer(object):
             
             for obj_id in doc_dict:
                 sum_of_words = sum([i for i in doc_dict[obj_id].values()])
+                
+                ## Check if arrays are to be generated
                 if self.arrays and self.min_words < sum_of_words < self.max_words:
-                    array = self.__init__array(sum_of_words)
+                    array = self.__init__array()
                 
                 for word in doc_dict[obj_id]:
                     if self.arrays and self.min_words < sum_of_words < self.max_words:
@@ -219,7 +220,7 @@ class KNN_stored(object):
         if self.db_file:
             self.conn = sqlite3.connect(self.db_path + self.db_file)
         else:
-            self.conn = sqlite3.connect(self.db_path + 'knn_results.sqlite')
+            self.conn = sqlite3.connect(self.db_path + 'obj_similarity.sqlite')
         self.c = self.conn.cursor()
         self.c.execute('''create table obj_results (obj_id text, neighbor_obj_id text, neighbor_distance real)''')
         self.c.execute('''create index obj_id_index on obj_results(obj_id)''')
