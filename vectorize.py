@@ -6,7 +6,7 @@ import sys
 import sqlite3
 from data_handler import np_array_loader
 from glob import glob
-from os import makedirs, listdir
+from os import makedirs, listdir, path
 from operator import itemgetter
 
           
@@ -40,9 +40,17 @@ class Indexer(object):
                 self.float32 = float32
                 self.save = save
                 self.word_num = len(self.word_map) + 1 # last column for sum of words in doc
+                self.array_path = self.db_path + 'obj_arrays/'
+                if not path.isdir(self.array_path):
+                    makedirs(self.array_path, 0755)
+                elif listdir(self.array_path) != []:
+                    print 'There are files from a previous run in the %s directory.' % self.array_path
+                    print 'Please delete them and rerun this script.'
+                    sys.exit()
             except ImportError:
                 self.arrays = False
                 print >> sys.stderr, "numpy is not installed, numpy arrays won't be generated"
+
             
         if relevance_ranking:
             self.__init__sqlite()
@@ -105,7 +113,6 @@ class Indexer(object):
         for word in word_occurence:
             if min_percent < (len(word_occurence[word]) / doc_num * 100) < max_percent:
                 self.words_to_keep.add(word)
-        print len(self.words_to_keep)
 
     def __init__array(self, sum_of_words):
         """Create numpy arrays"""
@@ -116,15 +123,8 @@ class Indexer(object):
     def make_array(self, obj_id, array):
         """Save numpy arrays to disk"""
         name = '-'.join(obj_id.split())
-        if self.depth:
-            path = self.db_path + 'obj_arrays/'
-        else:
-            path = self.db_path + 'doc_arrays/'
-        array_path = path + name + '.npy'
-        try:
-            self.save(array_path, array)
-        except IOError:
-            makedirs(path, 0755)
+        array_location = self.array_path + name + '.npy'
+        self.save(array_location, array)
         
     def __init__sqlite(self):
         """Initialize SQLite connection"""
@@ -197,7 +197,7 @@ class KNN_stored(object):
     """Class used to store distances between numpy arrays"""
     
     
-    def __init__(self, db, path='/var/lib/philologic/databases/', table_name=False, limit_results=100):
+    def __init__(self, db, path='/var/lib/philologic/databases/', dbfile_name=False, limit_results=100):
         """The docs_only option lets you specifiy which type of objects you want to generate results for, 
         full documents, or individual divs."""
         try:
@@ -207,22 +207,19 @@ class KNN_stored(object):
             print >> sys.stderr, "scipy is not installed, KNN results will not be stored"
         
         self.db_path = path + db + '/'
-
         self.arrays_path = self.db_path + 'obj_arrays/'
-        self.docs_only = docs_only
         self.limit = limit_results
+        self.db_file = dbfile_name
         
         files = listdir(self.arrays_path)
-        pattern = re.compile('(\d+)\.npy')
-        divs = re.compile('-')
-        if docs_only:
-            self.objects = [int(pattern.sub('\\1', doc)) for doc in files]
-        else:
-            self.objects = [doc.replace('.npy', '') for doc in files]
+        self.objects = [doc.replace('.npy', '') for doc in files]
         
         
     def __init__sqlite(self):
-        self.conn = sqlite3.connect(self.db_path + 'knn_results2.sqlite')
+        if self.db_file:
+            self.conn = sqlite3.connect(self.db_path + self.db_file)
+        else:
+            self.conn = sqlite3.connect(self.db_path + 'knn_results.sqlite')
         self.c = self.conn.cursor()
         self.c.execute('''create table obj_results (obj_id text, neighbor_obj_id text, neighbor_distance real)''')
         self.c.execute('''create index obj_id_index on obj_results(obj_id)''')
