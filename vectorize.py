@@ -156,12 +156,10 @@ class Indexer(object):
                 if word in self.word_map:
                     doc_id = int(fields[2])
                     self.doc = doc_id
-                    
                     obj_id = ' '.join(fields[2:endslice])
                     
                     if obj_id not in doc_dict:
                         doc_dict[obj_id] = {}
-                    
                     if word not in doc_dict[obj_id]:
                         doc_dict[obj_id][word] = 1
                     else:
