@@ -53,27 +53,17 @@ class DocInfo(object):
                 info = self.toms[obj_id][field]
         else:
             info = [hit['philo_id'] for hit in self.toms.query(**metadata_info)]
-        return info
-        
-    #def get_obj_id(self, **metadata):
-        #toms = SqlToms.SqlToms(self.db_path +'/toms.db', 7)
-        #result = [hit for hit in toms.query(**metadata)]
-        #return result
-        #if len(result) == 1:
-            #result = result[0]
-        #if result:
-            #return result
-        #else:
-            #result = []
-            #c.execute('select head from toms')
-            #headword_dict = dict([(headword[0].decode('utf-8').lower(), headword[0]) for headword in c.fetchall() if headword[0]  != None])
-            #headword_list = [headword for headword in headword_dict]
-            #close_matches = [headword_dict[word] for word in get_close_matches(query, headword_list, 5)]
-            #for match in close_matches:
-                #c.execute("SELECT philo_id, head FROM toms WHERE head = ?;",(match,))
-                #result.append(c.fetchone())
-            #return result
-            
+            if info == []:
+                conn = sqlite3.connect(self.db_path + '/toms.db')
+                c = conn.cursor()
+                c.execute('select head from toms')
+                headword_dict = dict([(headword[0].lower(), headword[0]) for headword in c.fetchall() if headword[0]  != None])
+                headword_list = [headword for headword in headword_dict]
+                close_matches = [headword_dict[word] for word in get_close_matches(metadata_info['head'], headword_list, 5)]
+                for match in close_matches:
+                    c.execute("SELECT philo_id FROM toms WHERE head = ?;",(match,))
+                    info.append(c.fetchone()[0])
+        return info            
         
     def get_excerpt(self, doc_id, highlight=False):
         """Return a text excerpt by querying PhiloLogic and using 

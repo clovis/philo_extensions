@@ -6,8 +6,10 @@ import sys
 import sqlite3
 from data_handler import np_load
 from glob import glob
-from os import makedirs, listdir, path
+from os import makedirs, listdir, path, fork, waitpid
+from shutil import rmtree
 from operator import itemgetter
+from cPickle import load, dump
 
           
 
@@ -29,9 +31,9 @@ class Indexer(object):
             self.max_words = sum([int(line.split()[0]) for line in open(self.db_path + 'WORK/all.frequencies')])
         else:
             self.max_words = max_words
+        self.stemmer = self.load_stemmer(stemmer)
         self.word_occurence_in_corpus(min_percent, max_percent)
         self.stopwords = self.get_stopwords(stopwords)
-        self.stemmer = self.load_stemmer(stemmer)       
         self.word_ids(word_cutoff, min_freq)
         
         if self.arrays:
@@ -74,7 +76,9 @@ class Indexer(object):
         if stopwords:
             for word in open(stopwords):
                 word = word.rstrip()
-                self.stopword_list.add(word)
+                if self.stemmer:
+                    word = self.stemmer.stemWord(word)
+                stopword_list.add(word)
         return stopword_list
 
     def word_ids(self, word_cutoff, min_freq):
@@ -86,9 +90,9 @@ class Indexer(object):
             if word_cutoff < line_count < endcutoff:
                 word = line.split()[1]
                 count = int(line.split()[0])
+                if self.stemmer:
+                    word = self.stemmer.stemWord(word)
                 if word not in self.stopwords and count > min_freq and word in self.words_to_keep:
-                    if self.stemmer:
-                        word = self.stemmer.stemWord(word)
                     if word not in self.word_map:
                         self.word_map[word] = word_id
                         word_id += 1
@@ -98,22 +102,28 @@ class Indexer(object):
         
     def word_occurence_in_corpus(self, min_percent, max_percent):
         word_occurence = {}
-        for line in open(self.db_path + 'WORK/all.frequencies'):
-            word = line.split()[1]
-            word_occurence[word] = set([])
         exclude = re.compile('all.words.sorted')
+        endslice = 3 + self.depth
+        obj_num = set([])
         for doc in self.docs:
             if exclude.search(doc):
                 continue
             for line in open(doc):
                 fields = line.split()
                 word = fields[1]
-                word_occurence[word].add(doc)
-        doc_num = len(self.docs)
+                if self.stemmer:
+                    word = self.stemmer.stemWord(word)
+                obj_id = ' '.join(fields[2:endslice])
+                if word not in word_occurence:
+                    word_occurence[word] = set([])
+                word_occurence[word].add(obj_id)
+                obj_num.add(obj_id)
+        doc_num = len(obj_num)
         self.words_to_keep = set([])
         for word in word_occurence:
             if min_percent < (len(word_occurence[word]) / doc_num * 100) < max_percent:
                 self.words_to_keep.add(word)
+        print len(self.words_to_keep)
 
     def __init__array(self):
         """Create numpy arrays"""
@@ -201,7 +211,7 @@ class KNN_stored(object):
     """Class used to store distances between numpy arrays"""
     
     
-    def __init__(self, db, path='/var/lib/philologic/databases/', dbfile_name=False, limit_results=100):
+    def __init__(self, db, path='/var/lib/philologic/databases/', dbfile_name=False, limit_results=100, workers=2):
         """The docs_only option lets you specifiy which type of objects you want to generate results for, 
         full documents, or individual divs."""
         try:
@@ -217,6 +227,7 @@ class KNN_stored(object):
         
         files = listdir(self.arrays_path)
         self.objects = [doc.replace('.npy', '') for doc in files]
+        self.workers = workers
         
         
     def __init__sqlite(self):
@@ -229,46 +240,58 @@ class KNN_stored(object):
         self.c.execute('''create index obj_id_index on obj_results(obj_id)''')
         self.c.execute('''create index distance_obj_id_index on obj_results(neighbor_distance)''')
     
-    def write_to_disk(self, results):
-        for obj, new_obj, result in results:
-            self.c.execute('insert into obj_results values (?,?,?)', (obj, new_obj, result))
-        self.conn.commit()
+    def write_to_disk(self, obj, results, temp_dir):
+        obj = obj.replace(' ', '-') + '.pickle'
+        output = open(temp_dir + obj, 'w')
+        dump(results, output, -1)
     
     def store_results(self):
         """This will load all numpy arrays saved on disk and compute the cosine distance for each
         array in the corpus"""
         
         self.__init__sqlite()
+        temp_dir = self.db_path + 'temp_results/'
+        makedirs(temp_dir, 0755)
         results = []
         count = 0
         one = 0
         array_list = [(obj.replace('-', ' '), np_load(obj, self.db_path)) for obj in self.objects]
-        ten_percent = len(array_list)/10
-        one_percent = len(array_list)/100
-        for obj, array in array_list:
-            full_results = []
-            for new_obj, new_array in array_list:
-                if obj != new_obj:
-                    result = 1 - self.cosine(array, new_array)
-                    full_results.append((obj, new_obj, result))
-            results += sorted(full_results, key=itemgetter(2), reverse=True)[:self.limit]
-            count += 1
-            one += 1
-            if count > ten_percent:
-                print '+',
-                self.write_to_disk(results)
-                count = 0
-                one = 0
-                results = []
-            elif one > one_percent:
-                print '.',
-                one = 0
-        print 'done with calculations...writing last bits to disk...'
-        for obj, new_obj, result in results:
-            self.c.execute('insert into obj_results values (?,?,?)', (obj, new_obj, result))
-    
+        total = len(array_list)
+        ten_percent = total/10
+        one_percent = total/100
+        done = 0
+        workers = 0
+        arrays = range(total)
+        while done < total:
+            while arrays and workers < self.workers:
+                obj, array = array_list[arrays.pop(0)]
+                pid = fork()
+                if pid:
+                    workers += 1
+                if not pid:
+                    full_results = []
+                    for new_obj, new_array in array_list:
+                        if obj != new_obj:
+                            result = 1 - self.cosine(array, new_array)
+                            full_results.append((obj, new_obj, result))
+                    results = sorted(full_results, key=itemgetter(2), reverse=True)[:self.limit]
+                    self.write_to_disk(obj, results, temp_dir)
+                    exit()
+            pid,status = waitpid(0,0)
+            workers -= 1
+            done += 1
+           
+        for file in glob(temp_dir + '*'):
+            results = load(open(file))
+            for obj, new_obj, result in results:
+                self.c.execute('insert into obj_results values (?,?,?)', (obj, new_obj, result))
         self.conn.commit()
         self.c.close()
+        rmtree(temp_dir)
+        
+        
+        
+
         
         
         

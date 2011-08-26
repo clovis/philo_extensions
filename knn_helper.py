@@ -8,8 +8,7 @@ from word_mapper import mapper
 
 class knn(object):
     
-    def __init__(self, db, path='/var/lib/philologic/databases/', docs_only=False, table_name=False):
-        self.docs_only = docs_only
+    def __init__(self, db, path='/var/lib/philologic/databases/', table_name=False):
         if table_name:
             db = path + db + '/' + table_name
         else:
