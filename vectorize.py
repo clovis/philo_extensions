@@ -20,12 +20,18 @@ class Indexer(object):
     def __init__(self, db, arrays=True, relevance_ranking=True, save_text=False, store_results=False, stopwords=False, stemmer=False, 
                 word_cutoff=0, min_freq=10, min_words=0, max_words=None, min_percent=0, max_percent=100, depth=0):
         """The depth variable defines how far to go in the tree. The value 0 corresponds to the doc level"""
+        
         self.db_path = '/var/lib/philologic/databases/' + db + '/'
         self.docs = glob(self.db_path + 'WORK/*words.sorted')
         self.store_results = store_results
         self.arrays = arrays
         self.r_r = relevance_ranking
         self.save_docs = save_text
+        if save_text:
+            self.save_docs = save_text
+            self.text_path = self.db_path + 'pruned_texts/'
+            if not path.isdir(self.text_path):
+                makedirs(self.text_path, 0755)
         self.depth = depth
         self.min_words = min_words
         if max_words == None:
@@ -150,13 +156,12 @@ class Indexer(object):
             self.c.execute('''create index word_doc_index on doc_hits(word)''')
             
     def save_text(self, doc_dict):
-        text_path = self.db_path + 'pruned_texts/'
         for obj in doc_dict:
             text = ''
             for word in doc_dict[obj]:
                 words = ' '.join([word for i in range(doc_dict[obj][word]))
                 text +=  words + ' '
-            output = open(text_path + obj + '.txt')
+            output = open(self.text_path + obj + '.txt')
             output.write(text)
             
     def index_docs(self): 
