@@ -98,7 +98,10 @@ class Indexer(object):
                 word = line.split()[1]
                 count = int(line.split()[0])
                 if self.stemmer:
-                    word = self.stemmer.stemWord(word)
+                    try:
+                        word = self.stemmer.stemWord(word)
+                    except UnicodeDecodeError:
+                        word = self.stemmer.stemWord(word.decode('latin-1').encode('utf-8'))
                 if word not in self.stopwords and count > min_freq and word in self.words_to_keep:
                     if word not in self.word_map:
                         self.word_map[word] = word_id
@@ -119,7 +122,10 @@ class Indexer(object):
                 fields = line.split()
                 word = fields[1]
                 if self.stemmer:
-                    word = self.stemmer.stemWord(word)
+                    try:                    
+                        word = self.stemmer.stemWord(word)
+                    except UnicodeDecodeError:
+                        word = self.stemmer.stemWord(word.decode('latin-1').encode('utf-8'))
                 obj_id = ' '.join(fields[2:endslice])
                 if word not in word_occurence:
                     word_occurence[word] = set([])
@@ -161,7 +167,8 @@ class Indexer(object):
             for word in doc_dict[obj]:
                 words = ' '.join([word for i in range(doc_dict[obj][word])])
                 text +=  words + ' '
-            output = open(self.text_path + obj + '.txt')
+            obj = '-'.join(obj.split())
+            output = open(self.text_path + obj + '.txt', 'w')
             output.write(text)
             
     def index_docs(self): 
@@ -178,7 +185,10 @@ class Indexer(object):
                 fields = line.split()
                 word = fields[1]
                 if self.stemmer:
-                    word = self.stemmer.stemWord(word)
+                    try:
+                        word = self.stemmer.stemWord(word)
+                    except UnicodeDecodeError:
+                        word = self.stemmer.stemWord(word.decode('latin-1').encode('utf-8'))
                 if word in self.word_map:
                     doc_id = int(fields[2])
                     self.doc = doc_id
