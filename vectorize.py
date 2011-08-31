@@ -159,7 +159,7 @@ class Indexer(object):
         for obj in doc_dict:
             text = ''
             for word in doc_dict[obj]:
-                words = ' '.join([word for i in range(doc_dict[obj][word]))
+                words = ' '.join([word for i in range(doc_dict[obj][word])])
                 text +=  words + ' '
             output = open(self.text_path + obj + '.txt')
             output.write(text)
