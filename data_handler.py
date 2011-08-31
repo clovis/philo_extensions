@@ -3,7 +3,6 @@
 import numpy as np
 import sqlite3
 import re
-import philologic.PhiloDB
 from os import listdir
 
 
@@ -31,6 +30,7 @@ def doc_counter(path):
     return float(len(listdir(path)))
     
 def words_in_doc(path, doc_id):
+    import philologic.PhiloDB
     db = philologic.PhiloDB.PhiloDB(path,7)
     filename = db.toms[doc_id]["filename"] + '.count'
     doc = path + 'WORK/' + filename
