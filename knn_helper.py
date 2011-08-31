@@ -8,18 +8,18 @@ from word_mapper import mapper
 
 class knn(object):
     
-    def __init__(self, db, path='/var/lib/philologic/databases/', table_name=False):
-        if table_name:
-            db = path + db + '/' + table_name
+    def __init__(self, db, path='/var/lib/philologic/databases/', measure='cosine', db_name=False):
+        if db_name:
+            db_name = path + db + '/' + db_name
         else:
-            db = path + db + '/knn_results.sqlite'
-        self.conn = sqlite3.connect(db)
+            db_name = path + db + '/' + measure + '_distance_results.sqlite'
+        self.conn = sqlite3.connect(db_name)
         self.cursor = self.conn.cursor()
         
             
     def search(self, obj_id, display=10):
         level = len(obj_id.split())
-        while level > 1:
+        while level:
             obj_id = ' '.join(obj_id.split()[:level])
             query = """select neighbor_obj_id, neighbor_distance from obj_results where obj_id = '%s' order by neighbor_distance desc limit %d""" % (obj_id, display)
             self.cursor.execute(query)

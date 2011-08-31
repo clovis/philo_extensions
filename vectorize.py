@@ -17,7 +17,7 @@ class Indexer(object):
     """Indexes a philologic database and generates numpy arrays for vector space calculations
     as well as stores word hits in a SQLite table to use for ranked relevance search"""
     
-    def __init__(self, db, arrays=True, relevance_ranking=True, store_results=False, stopwords=False, stemmer=False, 
+    def __init__(self, db, arrays=True, relevance_ranking=True, save_text=False, store_results=False, stopwords=False, stemmer=False, 
                 word_cutoff=0, min_freq=10, min_words=0, max_words=None, min_percent=0, max_percent=100, depth=0):
         """The depth variable defines how far to go in the tree. The value 0 corresponds to the doc level"""
         self.db_path = '/var/lib/philologic/databases/' + db + '/'
@@ -25,6 +25,7 @@ class Indexer(object):
         self.store_results = store_results
         self.arrays = arrays
         self.r_r = relevance_ranking
+        self.save_docs = save_text
         self.depth = depth
         self.min_words = min_words
         if max_words == None:
@@ -147,7 +148,17 @@ class Indexer(object):
         else:
             self.c.execute('''create table doc_hits (word text, doc_id int, word_freq int, total_words int)''')
             self.c.execute('''create index word_doc_index on doc_hits(word)''')
-               
+            
+    def save_text(self, doc_dict):
+        text_path = self.db_path + 'pruned_texts/'
+        for obj in doc_dict:
+            text = ''
+            for word in doc_dict[obj]:
+                words = ' '.join([word for i in range(doc_dict[obj][word]))
+                text +=  words + ' '
+            output = open(text_path + obj + '.txt')
+            output.write(text)
+            
     def index_docs(self): 
         """Index documents using *words.sorted files in the WORK directory of the Philologic database"""
         obj_count = 0
@@ -175,6 +186,9 @@ class Indexer(object):
                     else:
                         doc_dict[obj_id][word] += 1
             
+            
+            if self.save_docs:
+                self.save_text(doc_dict)
             for obj_id in doc_dict:
                 word_count = sum([i for i in doc_dict[obj_id].values()])
                 
@@ -211,30 +225,38 @@ class KNN_stored(object):
     """Class used to store distances between numpy arrays"""
     
     
-    def __init__(self, db, path='/var/lib/philologic/databases/', dbfile_name=False, limit_results=100, workers=2):
+    def __init__(self, db, dir_path='/var/lib/philologic/databases/', measure='cosine', dbfile_name=False, limit_results=100, workers=2):
         """The docs_only option lets you specifiy which type of objects you want to generate results for, 
         full documents, or individual divs."""
         try:
-            from scipy.spatial.distance import cosine
-            self.cosine = cosine
+            import scipy.spatial.distance
+            #self.distance = scipy.spatial.distance
+            self.measure = getattr(scipy.spatial.distance, measure)
         except ImportError:
             print >> sys.stderr, "scipy is not installed, KNN results will not be stored"
         
-        self.db_path = path + db + '/'
+        self.db_path = dir_path + db + '/'
         self.arrays_path = self.db_path + 'obj_arrays/'
         self.limit = limit_results
-        self.db_file = dbfile_name
+        
+        if dbfile_name:
+            self.db_file = self.db_path + dbfile_name
+        else:
+            self.db_file = self.db_path + measure + '_distance_results.sqlite'
+        count = 0
+        while path.isfile(self.db_file):
+            print '%s already exists' % self.db_file
+            count += 1
+            self.db_file = re.sub('\d*\.sqlite', str(count) + '.sqlite', self.db_file)
+            print 'renaming to %s' % self.db_file
         
         files = listdir(self.arrays_path)
         self.objects = [doc.replace('.npy', '') for doc in files]
         self.workers = workers
         
         
-    def __init__sqlite(self):
-        if self.db_file:
-            self.conn = sqlite3.connect(self.db_path + self.db_file)
-        else:
-            self.conn = sqlite3.connect(self.db_path + 'obj_similarity.sqlite')
+    def __init__sqlite(self):        
+        self.conn = sqlite3.connect(self.db_file)
         self.c = self.conn.cursor()
         self.c.execute('''create table obj_results (obj_id text, neighbor_obj_id text, neighbor_distance real)''')
         self.c.execute('''create index obj_id_index on obj_results(obj_id)''')
@@ -253,12 +275,8 @@ class KNN_stored(object):
         temp_dir = self.db_path + 'temp_results/'
         makedirs(temp_dir, 0755)
         results = []
-        count = 0
-        one = 0
         array_list = [(obj.replace('-', ' '), np_load(obj, self.db_path)) for obj in self.objects]
         total = len(array_list)
-        ten_percent = total/10
-        one_percent = total/100
         done = 0
         workers = 0
         arrays = range(total)
@@ -272,7 +290,7 @@ class KNN_stored(object):
                     full_results = []
                     for new_obj, new_array in array_list:
                         if obj != new_obj:
-                            result = 1 - self.cosine(array, new_array)
+                            result = 1 - self.measure(array, new_array)
                             full_results.append((obj, new_obj, result))
                     results = sorted(full_results, key=itemgetter(2), reverse=True)[:self.limit]
                     self.write_to_disk(obj, results, temp_dir)

@@ -44,7 +44,7 @@ class DocInfo(object):
                 obj_id = tuple(obj_id.split())
                 level = len(obj_id)
                 info = None
-                while level > 1:
+                while level:
                     info = self.toms[obj_id[:level]][field]
                     if isinstance(info, str):
                         break
