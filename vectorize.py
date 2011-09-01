@@ -238,7 +238,8 @@ class KNN_stored(object):
     """Class used to store distances between numpy arrays"""
     
     
-    def __init__(self, db, dir_path='/var/lib/philologic/databases/', measure='cosine', dbfile_name=False, limit_results=100, workers=2):
+    def __init__(self, db, dir_path='/var/lib/philologic/databases/', measure='cosine', dbfile_name=False, limit_results=100, workers=2,
+                use_lda=False):
         """The docs_only option lets you specifiy which type of objects you want to generate results for, 
         full documents, or individual divs."""
         try:
@@ -267,6 +268,12 @@ class KNN_stored(object):
         self.objects = [doc.replace('.npy', '') for doc in files]
         self.workers = workers
         
+        if use_lda:
+            array_path = self.db_path + '/topic_model/topic_arrays/'
+            files = listdir(array_path)
+            objects = [doc.replace('.npy', '') for doc in files]
+            self.topic_distribution = dict([(obj.replace('-', ' '), np_load(obj, array_path, normalize=False)) for obj in self.objects])
+            self.lda = True
         
     def __init__sqlite(self):        
         self.conn = sqlite3.connect(self.db_file)
@@ -288,7 +295,7 @@ class KNN_stored(object):
         temp_dir = self.db_path + 'temp_results/'
         makedirs(temp_dir, 0755)
         results = []
-        array_list = [(obj.replace('-', ' '), np_load(obj, self.db_path)) for obj in self.objects]
+        array_list = [(obj.replace('-', ' '), np_load(obj, self.arrays_path)) for obj in self.objects]
         total = len(array_list)
         done = 0
         workers = 0
@@ -304,6 +311,8 @@ class KNN_stored(object):
                     for new_obj, new_array in array_list:
                         if obj != new_obj:
                             result = 1 - self.measure(array, new_array)
+                            if self.lda:
+                                result *= 1 - self.measure(self.topic_distribution[obj], self.topic_distribution[new_obj])
                             full_results.append((obj, new_obj, result))
                     results = sorted(full_results, key=itemgetter(2), reverse=True)[:self.limit]
                     self.write_to_disk(obj, results, temp_dir)

@@ -7,14 +7,15 @@ import re
 import cPickle
 from subprocess import call
 from operator import itemgetter
-
+from numpy import zeros, float32, save
 
 
 class Mallet(object):
     
-    def __init__(self, db, mallet_path='', path='/var/lib/philologic/databases/'):
+    def __init__(self, db, mallet_path='', path='/var/lib/philologic/databases/', topics=10):
         self.mallet_exec = mallet_path + 'bin/mallet'
         self.db_path = path + db
+        self.topics = topics
     
     def import_dir(self):
         text_path = self.db_path + '/pruned_texts/'
@@ -75,30 +76,33 @@ class Mallet(object):
                 count += 1
             print ordered_topics[topic][:10]
         output = open(self.db_path + '/topic_model/topics.pickle', 'w')
-        cPickle.dump(ordered_topics, output)
+        cPickle.dump(ordered_topics, output, -1)
                 
-    def parse_topics_in_docs(self, limit=None, min_value=0):
-        output_file = self.db_path + '/topic_model/output_doc_topics'
-        path = re.compile('file:/' + self.db_path + '/pruned_texts/')
+    def parse_topics_in_docs(self):
+        input_file = self.db_path + '/topic_model/output_doc_topics'
+        array_path = self.db_path + '/topic_model/topic_arrays/'
+        os.makedirs(array_path)
+        path = re.compile('file:' + self.db_path + '/pruned_texts/')
         extension = re.compile('\.txt')
         topic_prop = {}
-        for line in open(output_file):
+        for line in open(input_file):
             if re.search('#', line):
                 continue
+            array = zeros(self.topics, dtype=float32)
             fields = line.split()[1:]
             doc = fields.pop(0)
             doc = path.sub('', doc)
             doc = extension.sub('', doc)
+            array_location = array_path + doc + '.npy'
+            doc = doc.replace('-', ' ')
             topic_prop[doc] = []
             for pos, field in enumerate(fields):
                 if self.isodd(pos):
                     continue
+                topic = int(fields[pos])
                 proportion = float(fields[pos + 1])
-                if proportion > min_value:
-                    topic_prop[doc].append((field, proportion))
-            topic_prop[doc] = sorted(topic_prop[doc], key=itemgetter(1), reverse=True)[:limit]        
-        output = open(self.db_path + '/topic_model/topics_in_docs.pickle', 'w')
-        cPickle.dump(topic_prop, output)
+                array[topic] = proportion
+            save(array_location, array)
         
     def isodd(self, num):
         """Function taken from http://stackoverflow.com/questions/1089936/even-and-odd-number"""
