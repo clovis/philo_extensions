@@ -84,7 +84,7 @@ class Indexer(object):
             for word in open(stopwords):
                 word = word.rstrip()
                 if self.stemmer:
-                    word = self.stemmer.stemWord(word)
+                    word = self.stemm(word)
                 stopword_list.add(word)
         return stopword_list
 
@@ -98,12 +98,9 @@ class Indexer(object):
                 word = line.split()[1]
                 count = int(line.split()[0])
                 if self.stemmer:
-                    try:
-                        word = self.stemmer.stemWord(word)
-                    except UnicodeDecodeError:
-                        word = self.stemmer.stemWord(word.decode('latin-1').encode('utf-8'))
+                    word = self.stemm(word)
                 if word not in self.stopwords and count > min_freq and word in self.words_to_keep:
-                    if word not in self.word_map:
+                    if word not in self.word_map and len(word) > 1:
                         self.word_map[word] = word_id
                         word_id += 1
         output = open(self.db_path + 'word_num2.txt', 'w')
@@ -122,10 +119,7 @@ class Indexer(object):
                 fields = line.split()
                 word = fields[1]
                 if self.stemmer:
-                    try:                    
-                        word = self.stemmer.stemWord(word)
-                    except UnicodeDecodeError:
-                        word = self.stemmer.stemWord(word.decode('latin-1').encode('utf-8'))
+                    word = self.stemm(word)
                 obj_id = ' '.join(fields[2:endslice])
                 if word not in word_occurence:
                     word_occurence[word] = set([])
@@ -137,6 +131,13 @@ class Indexer(object):
             if min_percent < (len(word_occurence[word]) / doc_num * 100) < max_percent:
                 self.words_to_keep.add(word)
         print len(self.words_to_keep)
+        
+    def stemm(self, word):
+        try:
+            word = self.stemmer.stemWord(word)
+        except UnicodeDecodeError:
+            word = self.stemmer.stemWord(word.decode('latin-1').encode('utf-8'))
+        return word
 
     def __init__array(self):
         """Create numpy arrays"""
@@ -185,10 +186,7 @@ class Indexer(object):
                 fields = line.split()
                 word = fields[1]
                 if self.stemmer:
-                    try:
-                        word = self.stemmer.stemWord(word)
-                    except UnicodeDecodeError:
-                        word = self.stemmer.stemWord(word.decode('latin-1').encode('utf-8'))
+                    word = self.stemm(word)
                 if word in self.word_map:
                     doc_id = int(fields[2])
                     self.doc = doc_id
