@@ -20,28 +20,19 @@ class Mallet(object):
     def import_dir(self):
         text_path = self.db_path + '/pruned_texts/'
         output = self.db_path + '/vectors.mallet'
-        if path:
-            call(self.mallet_exec + ' import-dir --keep-sequence --input ' + text_path + ' --output ' + output, shell=True)
-        else:
-            print 'Please provide a path.'
-            sys.exit()
+        call(self.mallet_exec + ' import-dir --keep-sequence --input ' + text_path + ' --output ' + output, shell=True)
     
     def import_files(self):
         pass
     
-    def train_topics(self, input_file=False, topics=0, threads=1):
-        input_file = self.db_path + '/' + input_file
+    def train_topics(self, threads=1):
+        input_file = self.db_path + '/vectors.mallet'
         output_path = self.db_path + '/topic_model/'
         if not os.path.isdir(output_path):
             os.makedirs(output_path, 0755)
         output_doc_topics = output_path + '/output_doc_topics'
         output_state = output_path + '/output_state.gz'
-        if not input_file:
-            print 'Please provide an input file.'
-            sys.exit()
-        elif not topics:
-            print 'You need to set the number of topics.'
-        command = self.mallet_exec + ' train-topics --input ' + input_file + ' --num-topics ' + str(topics) + ' --output-doc-topics '\
+        command = self.mallet_exec + ' train-topics --input ' + input_file + ' --num-topics ' + str(self.topics) + ' --output-doc-topics '\
                 + output_doc_topics + ' --output-state ' + output_state + ' --num-threads ' + str(threads) + ' --num-iterations 20000 --random-seed 1'
         call(command, shell=True) 
 
