@@ -103,7 +103,7 @@ class Indexer(object):
                     if word not in self.word_map and len(word) > 1:
                         self.word_map[word] = word_id
                         word_id += 1
-        output = open(self.db_path + 'word_num2.txt', 'w')
+        output = open(self.db_path + 'word_num.txt', 'w')
         output.write(str(len(self.word_map)))
         output.close()
         
@@ -239,7 +239,7 @@ class KNN_stored(object):
     
     
     def __init__(self, db, dir_path='/var/lib/philologic/databases/', measure='cosine', dbfile_name=False, limit_results=100, workers=2,
-                use_lda=False):
+                use_lda=False, use_only_lda=False):
         """The docs_only option lets you specifiy which type of objects you want to generate results for, 
         full documents, or individual divs."""
         try:
@@ -250,11 +250,16 @@ class KNN_stored(object):
             print >> sys.stderr, "scipy is not installed, KNN results will not be stored"
         
         self.db_path = dir_path + db + '/'
-        self.arrays_path = self.db_path + 'obj_arrays/'
         self.limit = limit_results
+        self.workers = workers
+        self.lda = use_lda
         
         if dbfile_name:
             self.db_file = self.db_path + dbfile_name
+        elif use_only_lda:
+            self.db_file = self.db_path + measure + '_lda_only_distance_results.sqlite'
+        elif use_lda:
+            self.db_file = self.db_path + measure + '_with_lda_distance_results.sqlite'
         else:
             self.db_file = self.db_path + measure + '_distance_results.sqlite'
         count = 0
@@ -264,16 +269,19 @@ class KNN_stored(object):
             self.db_file = re.sub('\d*\.sqlite', str(count) + '.sqlite', self.db_file)
             print 'renaming to %s' % self.db_file
         
-        files = listdir(self.arrays_path)
-        self.objects = [doc.replace('.npy', '') for doc in files]
-        self.workers = workers
+        if use_only_lda:
+            arrays_path = self.db_path + '/topic_model/topic_arrays/'
+        else:
+            arrays_path = self.db_path + 'obj_arrays/'
+        files = listdir(arrays_path)
+        objects = [doc.replace('.npy', '') for doc in files]
+        self.array_list = [(obj.replace('-', ' '), np_load(obj, arrays_path)) for obj in objects]
         
-        if use_lda:
+        if use_lda and not use_only_lda:
             array_path = self.db_path + '/topic_model/topic_arrays/'
             files = listdir(array_path)
             objects = [doc.replace('.npy', '') for doc in files]
-            self.topic_distribution = dict([(obj.replace('-', ' '), np_load(obj, array_path, normalize=False)) for obj in self.objects])
-            self.lda = True
+            self.topic_distribution = dict([(obj.replace('-', ' '), np_load(obj, array_path, normalize=False)) for obj in objects])
         
     def __init__sqlite(self):        
         self.conn = sqlite3.connect(self.db_file)
@@ -295,20 +303,19 @@ class KNN_stored(object):
         temp_dir = self.db_path + 'temp_results/'
         makedirs(temp_dir, 0755)
         results = []
-        array_list = [(obj.replace('-', ' '), np_load(obj, self.arrays_path)) for obj in self.objects]
-        total = len(array_list)
+        total = len(self.array_list)
         done = 0
         workers = 0
         arrays = range(total)
         while done < total:
             while arrays and workers < self.workers:
-                obj, array = array_list[arrays.pop(0)]
+                obj, array = self.array_list[arrays.pop(0)]
                 pid = fork()
                 if pid:
                     workers += 1
                 if not pid:
                     full_results = []
-                    for new_obj, new_array in array_list:
+                    for new_obj, new_array in self.array_list:
                         if obj != new_obj:
                             result = 1 - self.measure(array, new_array)
                             if self.lda:

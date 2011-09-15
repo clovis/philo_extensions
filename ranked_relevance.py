@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import json
 from math import log, floor
 from operator import itemgetter
 from word_mapper import mapper
@@ -17,6 +18,7 @@ class Searcher(object):
     def __init__(self, query, db, doc_level_search=True, stemmer=False, path='/var/lib/philologic/databases/'):
         self.path = path + db + '/'
         self.words = query.split()
+        print self.words
         self.doc_level_search = doc_level_search
         self.results = {}
         if doc_level_search:
@@ -32,11 +34,11 @@ class Searcher(object):
             except KeyError:
                 print >> sys.stderr, "Language not supported by stemmer. No stemming will be done."
             except ImportError:
-                print >> sys.stderr, "PyStemmer is not installed on your system. No stemming will be done."
+                print >> sys.stderr, "PyStemmer is not installed on your system. No stemming will be done."            
         
     def get_hits(self, word, doc=True):
         """Query the SQLite table and return a list of tuples containing the results"""
-        cursor = sqlite_conn(self.path)
+        cursor = sqlite_conn(self.path + 'hits_per_word.sqlite')
         if self.doc_level_search:
             cursor.execute('select doc_id, word_freq, total_words from doc_hits where word=?', (word,))
         else:
@@ -50,7 +52,7 @@ class Searcher(object):
         
     def get_idf(self, hits):
         """Return IDF score"""
-        total_docs = doc_counter(self.doc_path)
+        total_docs = doc_counter(self.doc_path) #### WRONG COUNT
         return log(float(total_docs) / float(len(hits))) + 1
                
     def search(self, measure='tf_idf', scoring='simple_scoring', intersect=False, display=10):
@@ -120,3 +122,96 @@ class Searcher(object):
         else:
             if score > self.results[obj_id]:
                 self.results[obj_id] = score
+                
+    def lda_search(self, measure='tf_idf', scoring='simple_scoring', intersect=False, display=10):
+        """Searcher function"""
+        self.intersect = False
+        #print self.words
+        self.words = [words.decode('utf-8') for words in self.words]
+        if self.words != []:
+            lda_query = self.match_topic()
+            for word in self.words[:1]:  # temporary slice, to offer it as an option?
+                lda_query[word] = sum([lda_query[term] for term in lda_query])
+            print lda_query
+            self.num_hits = {}
+            for other_word, freq in lda_query.iteritems():
+                hits = self.get_hits(other_word)
+                results = self.lda_scoring(hits, scoring, freq)
+            self.results = dict([(obj_id, self.results[obj_id] * self.num_hits[obj_id]) for obj_id in self.results if self.num_hits[obj_id] > 1])
+            return sorted(self.results.iteritems(), key=itemgetter(1), reverse=True)[:display]
+        else:
+            return []
+            
+    def match_topic(self):
+        topic_id = int
+        cursor = sqlite_conn(self.path + 'lda_topics.sqlite')
+        if len(self.words) == 1:
+            cursor.execute('select topic, position from word_position where word=? order by position', (self.words[0],))
+            topic_id = cursor.fetchone()[0]
+        else:
+            topic_pos = {}
+            topic_matches = {}
+            query = 'select topic, position from word_position where word="%s"' % self.words[0]
+            for word in self.words[1:]:
+                query += ' or word="%s"' % word
+            cursor.execute(query)
+            for topic, position in cursor.fetchall():
+                if topic not in topic_pos:
+                    topic_pos[topic] = position
+                    topic_matches[topic] = 1
+                else:
+                    topic_pos[topic] += position
+                    topic_matches[topic] += 1
+            word_num = len(self.words)
+            topics = [(topic, topic_pos[topic]) for topic in topic_pos if topic_matches[topic] == word_num]
+            if topics == []:
+                topics = [(topic, topic_pos[topic]) for topic in topic_pos if topic_matches[topic] == word_num - 1]
+            topic_id = sorted(topics, key=itemgetter(1))[0][0]
+        cursor.execute('select words from topics where topic=?', (topic_id,))
+        results = json.loads(cursor.fetchone()[0])
+        topic = [(term, float(freq)) for term, freq in results.iteritems()]# if float(freq) > 0.01]
+        topic = dict(sorted(topic, key=itemgetter(1), reverse=True)[:10])
+        return topic
+        
+    def lda_scoring(self, hits, scoring, freq):
+        idf = self.get_idf(hits)
+        for obj_id, word_freq, word_sum in hits:
+            tf = float(word_freq) / float(word_sum)
+            score = tf * idf * freq
+            if obj_id not in self.results:
+                self.results[obj_id] = score
+                self.num_hits[obj_id] = 1
+            else:
+                self.results[obj_id] += score    
+                self.num_hits[obj_id] += 1
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    

@@ -14,7 +14,7 @@ def np_load(obj_id, path, normalize=True, top=0, lower=None):
         return np_array[top:lower]
           
 def sqlite_conn(path):
-    conn = sqlite3.connect(path + 'hits_per_word.sqlite')
+    conn = sqlite3.connect(path)
     conn.text_factory = str
     return conn.cursor()
 

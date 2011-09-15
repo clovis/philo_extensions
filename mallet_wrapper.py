@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 
+from __future__ import division
 import sys
 import os
 import gzip
 import re
-import cPickle
+import sqlite3
+import json
 from subprocess import call
 from operator import itemgetter
 from numpy import zeros, float32, save
@@ -20,7 +22,7 @@ class Mallet(object):
     def import_dir(self):
         text_path = self.db_path + '/pruned_texts/'
         output = self.db_path + '/vectors.mallet'
-        call(self.mallet_exec + ' import-dir --keep-sequence --input ' + text_path + ' --output ' + output, shell=True)
+        call(self.mallet_exec + " import-dir --keep-sequence --token-regex '[\p{L}\p{M}]+' --input " + text_path + ' --output ' + output, shell=True)
     
     def import_files(self):
         pass
@@ -32,8 +34,10 @@ class Mallet(object):
             os.makedirs(output_path, 0755)
         output_doc_topics = output_path + '/output_doc_topics'
         output_state = output_path + '/output_state.gz'
-        command = self.mallet_exec + ' train-topics --input ' + input_file + ' --num-topics ' + str(self.topics) + ' --output-doc-topics '\
-                + output_doc_topics + ' --output-state ' + output_state + ' --num-threads ' + str(threads) + ' --num-iterations 20000 --random-seed 1'
+        command = self.mallet_exec + ' train-topics --input ' + input_file + ' --num-topics '\
+                + str(self.topics) + ' --output-doc-topics ' + output_doc_topics + ' --output-state '\
+                + output_state + ' --num-threads ' + str(threads) + ' --num-iterations 20000 --random-seed 1'\
+                + ' --optimize-interval 10'
         call(command, shell=True) 
 
     def parse_topics(self, word_limit=100):
@@ -56,18 +60,41 @@ class Mallet(object):
             else:
                 topics[topic][word] += 1
         ordered_topics = {}
+        positions = {}
+        words_in_topic = {}
         for topic in topics:
             if topic not in ordered_topics:
-                ordered_topics[topic] = []
-            count = 0
-            for word in sorted(topics[topic], key= topics[topic].get, reverse=True):
-                if count > word_limit:
-                    break
-                ordered_topics[topic].append((word, topics[topic][word]))
-                count += 1
-            print ordered_topics[topic][:10]
-        output = open(self.db_path + '/topic_model/topics.pickle', 'w')
-        cPickle.dump(ordered_topics, output, -1)
+                ordered_topics[topic] = {}
+            for pos, word in enumerate(sorted(topics[topic], key=topics[topic].get, reverse=True)):
+                ordered_topics[topic][word] = pos
+                if word not in positions:
+                    positions[word] = []
+                positions[word].append((topic, pos))
+                if topic not in words_in_topic:
+                    words_in_topic[topic] = 0
+                words_in_topic[topic] += topics[topic][word]
+                
+        conn = sqlite3.connect(self.db_path + '/lda_topics.sqlite')
+        conn.text_factory = str
+        c = conn.cursor()
+        
+        ## store topics in database
+        c.execute('''create table topics (topic int, words text)''')
+        c.execute('''create index topic_index on topics(topic)''')
+        for topic in topics:
+            words_freq = dict([(word, (topics[topic][word] / words_in_topic[topic])) for word in topics[topic]])
+            c.execute('insert into topics values (?,?)', (topic, json.dumps(words_freq)))
+        conn.commit()
+        
+        ## Store highest topic for each word in database
+        c.execute('''create table word_position (word text, topic int, position int)''')
+        c.execute('''create index word_index on word_position(word)''')
+        for word in positions:
+            for topic, pos in positions[word]:
+                c.execute('insert into word_position values (?,?,?)', (word, topic, pos))
+        conn.commit()
+        c.close()
+            
                 
     def parse_topics_in_docs(self):
         input_file = self.db_path + '/topic_model/output_doc_topics'
