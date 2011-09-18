@@ -18,7 +18,6 @@ class Searcher(object):
     def __init__(self, query, db, doc_level_search=True, stemmer=False, path='/var/lib/philologic/databases/'):
         self.path = path + db + '/'
         self.words = query.split()
-        print self.words
         self.doc_level_search = doc_level_search
         self.results = {}
         if doc_level_search:
@@ -53,7 +52,10 @@ class Searcher(object):
     def get_idf(self, hits):
         """Return IDF score"""
         total_docs = doc_counter(self.doc_path) #### WRONG COUNT
-        return log(float(total_docs) / float(len(hits))) + 1
+        try:
+            return log(float(total_docs) / float(len(hits))) + 1
+        except ZeroDivisionError:
+            return 0
                
     def search(self, measure='tf_idf', scoring='simple_scoring', intersect=False, display=10):
         """Searcher function"""
@@ -126,19 +128,21 @@ class Searcher(object):
     def lda_search(self, measure='tf_idf', scoring='simple_scoring', intersect=False, display=10):
         """Searcher function"""
         self.intersect = False
-        #print self.words
         self.words = [words.decode('utf-8') for words in self.words]
         if self.words != []:
             lda_query = self.match_topic()
-            for word in self.words[:1]:  # temporary slice, to offer it as an option?
-                lda_query[word] = sum([lda_query[term] for term in lda_query])
-            print lda_query
-            self.num_hits = {}
-            for other_word, freq in lda_query.iteritems():
-                hits = self.get_hits(other_word)
-                results = self.lda_scoring(hits, scoring, freq)
-            self.results = dict([(obj_id, self.results[obj_id] * self.num_hits[obj_id]) for obj_id in self.results if self.num_hits[obj_id] > 1])
-            return sorted(self.results.iteritems(), key=itemgetter(1), reverse=True)[:display]
+            if lda_query != None:
+                for word in self.words[:1]:  # temporary slice, to offer it as an option?
+                    lda_query[word] = sum([lda_query[term] for term in lda_query])
+                print lda_query
+                self.num_hits = {}
+                for other_word, freq in lda_query.iteritems():
+                    hits = self.get_hits(other_word)
+                    results = self.lda_scoring(hits, scoring, freq, measure)
+                self.results = dict([(obj_id, self.results[obj_id] * self.num_hits[obj_id]) for obj_id in self.results if self.num_hits[obj_id] > 1])
+                return sorted(self.results.iteritems(), key=itemgetter(1), reverse=True)[:display]
+            else:
+                return []
         else:
             return []
             
@@ -147,7 +151,10 @@ class Searcher(object):
         cursor = sqlite_conn(self.path + 'lda_topics.sqlite')
         if len(self.words) == 1:
             cursor.execute('select topic, position from word_position where word=? order by position', (self.words[0],))
-            topic_id = cursor.fetchone()[0]
+            try:
+                topic_id = cursor.fetchone()[0]
+            except TypeError:
+                return None
         else:
             topic_pos = {}
             topic_matches = {}
@@ -173,18 +180,35 @@ class Searcher(object):
         topic = dict(sorted(topic, key=itemgetter(1), reverse=True)[:10])
         return topic
         
-    def lda_scoring(self, hits, scoring, freq):
-        idf = self.get_idf(hits)
-        for obj_id, word_freq, word_sum in hits:
-            tf = float(word_freq) / float(word_sum)
-            score = tf * idf * freq
-            if obj_id not in self.results:
-                self.results[obj_id] = score
-                self.num_hits[obj_id] = 1
-            else:
-                self.results[obj_id] += score    
-                self.num_hits[obj_id] += 1
-    
+    def lda_scoring(self, hits, scoring, freq, measure):
+        if measure == 'tf_idf':
+            idf = self.get_idf(hits)
+            for obj_id, word_freq, word_sum in hits:
+                tf = float(word_freq) / float(word_sum)
+                score = tf * idf * freq
+                if obj_id not in self.results:
+                    self.results[obj_id] = score
+                    self.num_hits[obj_id] = 1
+                else:
+                    self.results[obj_id] += score    
+                    self.num_hits[obj_id] += 1
+        else:
+            idf = self.get_idf(hits)
+            avg_dl = avg_doc_length(self.path)
+            k1 = 1.2
+            b = 0.75
+            for obj_id, word_freq, obj_length in hits:
+                tf = float(word_freq)
+                dl = float(obj_length)
+                temp_score = tf * (k1 + 1.0)
+                temp_score2 = tf + k1 * ((1.0 - b) + b * floor(dl / avg_dl))
+                score = idf * temp_score / temp_score2 * freq
+                if obj_id not in self.results:
+                    self.results[obj_id] = score
+                    self.num_hits[obj_id] = 1
+                else:
+                    self.results[obj_id] += score    
+                    self.num_hits[obj_id] += 1
     
     
     

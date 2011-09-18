@@ -27,7 +27,8 @@ class DocInfo(object):
             
     def philo_search(self):
         """Query the PhiloLogic database and retrieve a hitlist"""
-        self.hitlist = self.db.query(self.query[self.word])
+        db = PhiloDB.PhiloDB(self.db_path,7)
+        self.hitlist = db.query(self.query[self.word])
         time.sleep(.05)
         self.hitlist.update()
         
